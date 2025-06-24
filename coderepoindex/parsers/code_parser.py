@@ -28,6 +28,17 @@ except ImportError:
     get_language = None
 
 
+class SnippetType(Enum):
+    """代码片段类型"""
+    CODE_FUNCTION = "code_function"
+    CODE_CLASS = "code_class"
+    CODE_METHOD = "code_method"
+    TEXT_CHUNK = "text_chunk"
+    CONFIG_FILE = "config_file"
+    DOCUMENTATION = "documentation"
+    BINARY_FILE = "binary_file"
+
+
 class NodeType(Enum):
     """AST 节点类型枚举"""
     FUNCTION = "function"
@@ -77,19 +88,35 @@ MAX_FILE_SIZE = 10 * 1024 * 1024
 @dataclass
 class CodeSnippet:
     """代码片段数据结构"""
-    type: str
-    path: str
-    name: str
-    code: str
-    md5: str
-    func_name: str = ""
-    args: str = ""
-    class_name: str = ""
-    comment: str = ""
-    key_msg: str = ""
-    line_start: int = 0
-    line_end: int = 0
+    type: str                           # 片段类型：code_function/code_class/text_chunk等
+    path: str                           # 文件相对路径
+    name: str                           # 片段名称
+    code: str                           # 代码内容
+    md5: str = ""                       # MD5哈希值
+    func_name: str = ""                 # 函数名
+    args: str = ""                      # 函数参数
+    class_name: str = ""                # 类名
+    comment: str = ""                   # 注释
+    key_msg: str = ""                   # 关键信息
+    line_start: int = 0                 # 起始行号
+    line_end: int = 0                   # 结束行号
+    
+    # 目录和文件信息
+    directory: str = ""                 # 所在目录
+    filename: str = ""                  # 文件名
+    file_type: str = ""                 # 文件类型：code/text/binary
+    language: str = ""                  # 编程语言
+    
+    # 扩展元数据
     metadata: Dict[str, Any] = field(default_factory=dict)
+
+    # 新增：版本管理字段
+    repo_commit: Optional[str] = None      # 仓库commit hash
+    file_md5: Optional[str] = None         # 文件内容MD5
+    chunk_hash: Optional[str] = None       # 切块内容hash
+    created_at: Optional[str] = None       # 创建时间
+    updated_at: Optional[str] = None       # 更新时间
+    version: int = 1                       # 切块版本号
 
     def __post_init__(self):
         """后处理，计算 MD5 如果未提供"""

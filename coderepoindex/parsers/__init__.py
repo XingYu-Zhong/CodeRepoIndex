@@ -50,6 +50,26 @@ from .config import (
     should_parse_file
 )
 
+from .directory_parser import (
+    DirectoryParser,
+    DirectoryConfig,
+    DirectoryParseResult,
+    SnippetType,
+    parse_directory,
+    create_directory_config,
+    DEFAULT_IGNORE_PATTERNS,
+    DOCUMENTATION_EXTENSIONS,
+    CONFIG_EXTENSIONS,
+    TEXT_EXTENSIONS
+)
+
+from .version_manager import (
+    VersionManager,
+    ChangeType,
+    FileSnapshot,
+    ChangeRecord
+)
+
 from .logger_config import LoggerConfig, setup_parser_logging, log_performance, log_error_with_context
 
 # 版本信息
@@ -63,9 +83,21 @@ __all__ = [
     "ParseResult",
     "ParserConfig",
     
+    # 目录解析类
+    "DirectoryParser",
+    "DirectoryConfig", 
+    "DirectoryParseResult",
+    
+    # 版本管理类
+    "VersionManager",
+    "FileSnapshot",
+    "ChangeRecord",
+    
     # 枚举类
     "SupportedLanguage", 
     "NodeType",
+    "SnippetType",
+    "ChangeType",
     
     # 异常类
     "ParserError",
@@ -76,15 +108,20 @@ __all__ = [
     "ConfigTemplates",
     "DEFAULT_CONFIG",
     "LANGUAGE_CONFIGS",
+    "DEFAULT_IGNORE_PATTERNS",
+    "DOCUMENTATION_EXTENSIONS",
+    "CONFIG_EXTENSIONS", 
+    "TEXT_EXTENSIONS",
     
     # 便利函数
     "parse_code_file",
+    "parse_directory",
+    "create_directory_config",
     "get_file_language",
     "get_file_language_from_parser",
     "get_language_config",
     "is_file_ignored", 
     "should_parse_file",
-    
     
     # 日志配置
     "LoggerConfig",

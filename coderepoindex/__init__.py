@@ -11,8 +11,11 @@ __email__ = "contact@coderepoindex.com"
 
 from .core.indexer import CodeIndexer
 from .core.searcher import CodeSearcher
+from .repository import RepositoryFetcher, RepoSource
 
 __all__ = [
     "CodeIndexer",
     "CodeSearcher",
+    "RepositoryFetcher",
+    "RepoSource",
 ] 

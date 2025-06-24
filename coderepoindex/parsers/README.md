@@ -12,6 +12,7 @@
 - [解析结果](#📋-解析结果)
 - [配置选项](#⚙️-配置选项)
 - [支持的编程语言](#🌐-支持的编程语言)
+- [版本管理与增量更新](#🔄-版本管理与增量更新)
 - [高级功能](#🛠️-高级功能)
 - [测试和调试](#🧪-测试和调试)
 - [故障排查](#🔧-故障排查)
@@ -493,6 +494,96 @@ config = ConfigTemplates.chinese_optimized()
 - ✅ 接口和抽象类
 - ✅ 注解处理
 - ✅ 内部类支持
+
+## 🔄 版本管理与增量更新
+
+为了高效处理大型代码仓库和持续的变更，`DirectoryParser` 引入了增量更新机制。当代码仓库更新后，它能智能地识别出发生变化的文件，并只对这些文件进行重新解析，从而极大地提高了二次处理的效率。
+
+### 核心原理
+
+- **Commit 关联**: 每次解析都与一个 `repo_commit` 哈希相关联。
+- **文件快照 (MD5)**: 系统会为每个文件内容生成一个 MD5 哈希作为快照。如果文件内容没有改变，MD5 将保持不变。
+- **切块哈希**: 每个从文件中提取的 `CodeSnippet` 也会根据其内容生成一个哈希。
+- **状态存储**: 所有的版本信息（文件快照、切块索引）都以 JSON 格式存储在 `.coderepo_index` 目录中。
+
+### 工作流程
+
+1. **首次解析**: 对整个目录进行全面解析，并为每个文件和切块创建版本快照。
+2. **生成更新计划**: 当使用新的 `repo_commit` 再次解析时，`VersionManager` 会：
+    - 遍历当前所有文件，计算新的 MD5。
+    - 与存储的旧快照进行对比，识别出**新增 (Added)**、**修改 (Modified)** 和 **已删除 (Deleted)** 的文件。
+    - 生成一个详细的更新计划。
+3. **增量解析**: `DirectoryParser` 只对标记为**新增**或**修改**的文件进行解析。
+4. **状态更新**: 完成解析后，更新 `.coderepo_index` 中的快照和索引信息。
+
+### 如何启用增量更新
+
+通过 `create_directory_config` 或直接配置 `DirectoryConfig` 来启用此功能。
+
+```python
+from coderepoindex.parsers import (
+    parse_directory, 
+    create_directory_config, 
+    DirectoryParseResult
+)
+from coderepoindex.repository import RepositoryFetcher, create_git_config
+import git # 假设 gitpython 已安装
+
+# 1. 获取仓库并获取 commit hash
+repo_url = "https://github.com/octocat/Hello-World.git"
+with RepositoryFetcher() as fetcher:
+    # 第一次获取
+    git_config = create_git_config(repo_url, branch="master")
+    repo_path = fetcher.fetch(git_config)
+    repo = git.Repo(repo_path)
+    commit_hash_1 = repo.head.commit.hexsha
+
+# 2. 首次全量解析
+print(f"--- 首次全量解析 (Commit: {commit_hash_1[:7]}) ---")
+config_1 = create_directory_config(
+    enable_incremental_update=True,
+    repo_commit=commit_hash_1
+)
+result_1 = parse_directory(repo_path, config=config_1)
+print(f"处理文件数: {result_1.processed_files}, 生成片段: {len(result_1.snippets)}")
+
+# 假设仓库有了新的 commit，我们再次获取
+# ... (这里省略了实际的 git pull 操作, 假设 repo_path 内容已更新)
+# commit_hash_2 = "新的commit_hash" 
+
+# 3. 进行增量更新
+# 注意：在实际应用中，你需要传入新的 commit hash
+# commit_hash_2 = repo.head.commit.hexsha 
+commit_hash_2 = commit_hash_1 # 为演示方便，我们使用相同的 commit
+
+print(f"\\n--- 第二次增量解析 (Commit: {commit_hash_2[:7]}) ---")
+config_2 = create_directory_config(
+    enable_incremental_update=True,
+    repo_commit=commit_hash_2
+)
+result_2 = parse_directory(repo_path, config=config_2)
+
+# 4. 查看增量更新结果
+print(f"是否使用增量更新: {result_2.incremental_update_used}")
+if result_2.update_plan:
+    print("更新计划:")
+    print(f"  - 新增文件: {result_2.files_added}")
+    print(f"  - 修改文件: {result_2.files_changed}")
+    print(f"  - 删除文件: {result_2.files_deleted}")
+    print(f"  - 未变文件: {len(result_2.update_plan['unchanged_files'])}")
+print(f"实际处理文件数: {result_2.processed_files}")
+print(f"生成片段数 (仅含新增/修改): {len(result_2.snippets)}")
+
+```
+
+### 增量更新的结果 (`DirectoryParseResult`)
+
+当启用增量更新后，`DirectoryParseResult` 会包含以下额外信息：
+- `incremental_update_used` (bool): 标记是否成功启动了增量更新。
+- `update_plan` (dict): 详细的更新计划，包含文件变化列表。
+- `files_added`, `files_changed`, `files_deleted` (int): 文件变化的统计。
+
+**注意**：在这种模式下，返回的 `snippets` 列表只包含来自**新增**和**修改**文件的代码片段。你需要将这些变化应用到你的数据存储（如向量数据库）中。
 
 ## 🛠️ 高级功能
 

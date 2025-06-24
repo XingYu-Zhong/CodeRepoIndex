@@ -142,7 +142,7 @@ pytest tests/
 
 - 项目主页: https://github.com/XingYu-Zhong/CodeRepoIndex
 - 问题反馈: https://github.com/XingYu-Zhong/CodeRepoIndex/issues
-- 邮箱: your-email@example.com
+- 邮箱: zhongxingyuemail@gmail.com
 
 ## 致谢
 
