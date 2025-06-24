@@ -312,9 +312,16 @@ class CodeParser:
         Returns:
             节点对应的文本内容
         """
-        if node.start_byte >= len(source_code.encode('utf-8')):
+        try:
+            # 使用字节切片，然后解码
+            source_bytes = source_code.encode('utf-8')
+            if node.start_byte >= len(source_bytes) or node.end_byte > len(source_bytes):
+                return ""
+            node_bytes = source_bytes[node.start_byte:node.end_byte]
+            return node_bytes.decode('utf-8', errors='replace')
+        except Exception as e:
+            logger.warning(f"提取节点文本失败: {e}")
             return ""
-        return source_code[node.start_byte:node.end_byte]
 
     def _extract_function_details(self, node: Node, source_code: str, language: SupportedLanguage) -> Tuple[str, str, str]:
         """
@@ -346,11 +353,36 @@ class CodeParser:
         func_name = ""
         args = ""
         
+        # Python AST 结构：function_definition 或 async_function_definition
+        # 子节点顺序通常是：[decorators], def/async, identifier, parameters, [return_type], :, block
+        
         for child in node.children:
             if child.type == "identifier":
                 func_name = self._extract_node_text(child, source_code)
             elif child.type == "parameters":
                 args = self._extract_node_text(child, source_code)
+                break  # 找到参数后即可退出
+                
+        # 如果没有找到函数名，尝试从节点文本中提取
+        if not func_name:
+            full_text = self._extract_node_text(node, source_code)
+            lines = full_text.split('\n')
+            for line in lines:
+                line = line.strip()
+                if line.startswith('def ') or line.startswith('async def '):
+                    # 提取函数名
+                    if '(' in line:
+                        start = line.find('def ') + 4
+                        if line.startswith('async def '):
+                            start = line.find('async def ') + 10
+                        end = line.find('(')
+                        func_name = line[start:end].strip()
+                        
+                        # 提取参数
+                        paren_end = line.rfind(')')
+                        if paren_end != -1:
+                            args = line[end:paren_end+1]
+                        break
                 
         return func_name, func_name, args
 
@@ -489,9 +521,12 @@ class CodeParser:
                 
                 logger.debug(f"发现函数: {short_name}, 行数: {line_start}-{line_end}, 参数: {args}")
                 
+                # 确定代码片段类型：在类内部的是方法，否则是函数
+                snippet_type = "method" if class_name else "function"
+                
                 # 创建代码片段
                 snippet = CodeSnippet(
-                    type="function",
+                    type=snippet_type,
                     path=str(file_path),
                     name=short_name,
                     func_name=full_name,
@@ -532,7 +567,7 @@ class CodeParser:
             是否为函数节点
         """
         function_types = {
-            SupportedLanguage.PYTHON: ('function_definition', 'method_definition'),
+            SupportedLanguage.PYTHON: ('function_definition', 'async_function_definition'),
             SupportedLanguage.JAVASCRIPT: ('function_declaration', 'method_definition', 'arrow_function'),
             SupportedLanguage.TYPESCRIPT: ('function_declaration', 'method_definition', 'arrow_function'),
             SupportedLanguage.JAVA: ('method_declaration', 'constructor_declaration'),
@@ -763,15 +798,91 @@ class CodeParser:
         """解析后端代码"""
         snippets = []
         
-        # 解析类
+        # 解析类（包含类中的方法）
         classes = self._parse_classes(root_node, source_code, language, file_path)
         snippets.extend(classes)
         
-        # 解析顶级函数
-        functions = self._parse_functions(root_node, source_code, language, file_path)
-        snippets.extend(functions)
+        # 解析顶级函数（不包含类中的方法）
+        top_level_functions = self._parse_top_level_functions(root_node, source_code, language, file_path)
+        snippets.extend(top_level_functions)
         
         return snippets
+
+    def _parse_top_level_functions(self, root_node: Node, source_code: str,
+                                   language: SupportedLanguage, file_path: Path) -> List[CodeSnippet]:
+        """
+        解析顶级函数（不包含类中的方法）
+        
+        Args:
+            root_node: 根节点
+            source_code: 源代码
+            language: 编程语言
+            file_path: 文件路径
+            
+        Returns:
+            顶级函数代码片段列表
+        """
+        functions = []
+        
+        def traverse_node(node: Node, in_class: bool = False, current_comment: str = ""):
+            nonlocal functions
+            
+            # 收集注释
+            if 'comment' in node.type.lower():
+                current_comment += self._extract_node_text(node, source_code) + "\n"
+                return current_comment
+            
+            # 如果遇到类节点，标记在类内部
+            if self._is_class_node(node, language):
+                comment = current_comment
+                for child in node.children:
+                    comment = traverse_node(child, True, comment)
+                return comment
+            
+            # 处理函数节点：只处理不在类内部的函数
+            if self._is_function_node(node, language) and not in_class:
+                func_code = self._extract_node_text(node, source_code)
+                full_name, short_name, args = self._extract_function_details(node, source_code, language)
+                
+                # 计算行号
+                line_start = source_code[:node.start_byte].count('\n') + 1
+                line_end = source_code[:node.end_byte].count('\n') + 1
+                
+                # 提取关键信息
+                key_msg = self._extract_key_messages(func_code, current_comment, file_path)
+                
+                logger.debug(f"发现顶级函数: {short_name}, 行数: {line_start}-{line_end}, 参数: {args}")
+                
+                # 创建代码片段
+                snippet = CodeSnippet(
+                    type="function",
+                    path=str(file_path),
+                    name=short_name,
+                    func_name=full_name,
+                    args=args,
+                    class_name="",  # 顶级函数没有类名
+                    comment=current_comment.strip(),
+                    code=current_comment + func_code,
+                    key_msg=key_msg,
+                    line_start=line_start,
+                    line_end=line_end,
+                    md5=""  # 将在 __post_init__ 中计算
+                )
+                
+                functions.append(snippet)
+                current_comment = ""  # 重置注释
+            
+            # 递归遍历子节点
+            comment = current_comment
+            for child in node.children:
+                comment = traverse_node(child, in_class, comment)
+            
+            return comment
+        
+        traverse_node(root_node)
+        
+        logger.debug(f"顶级函数解析完成，共找到 {len(functions)} 个函数")
+        return functions
 
     def parse_multiple_files(self, file_paths: List[str]) -> List[ParseResult]:
         """

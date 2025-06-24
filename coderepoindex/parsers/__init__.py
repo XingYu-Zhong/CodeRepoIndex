@@ -50,7 +50,6 @@ from .config import (
     should_parse_file
 )
 
-from .test_parser import ParserTester
 from .logger_config import LoggerConfig, setup_parser_logging, log_performance, log_error_with_context
 
 # 版本信息
@@ -86,8 +85,6 @@ __all__ = [
     "is_file_ignored", 
     "should_parse_file",
     
-    # 测试工具
-    "ParserTester",
     
     # 日志配置
     "LoggerConfig",
