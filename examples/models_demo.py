@@ -118,29 +118,7 @@ def demo_factory_methods():
         print(f"工厂方法示例失败: {e}")
 
 
-def demo_local_providers():
-    """演示本地提供商（目前为空实现）"""
-    print("\n=== 本地提供商示例 ===")
-    
-    try:
-        # 尝试创建本地 LLM 提供商
-        local_llm = create_llm_provider(
-            provider_type="local",
-            model_name="local-model",
-            model_path="/path/to/local/model"
-        )
-        print(f"本地 LLM 提供商可用: {local_llm.is_available()}")
-        
-        # 尝试创建本地 Embedding 提供商
-        local_embedding = create_embedding_provider(
-            provider_type="local",
-            model_name="local-embedding",
-            model_path="/path/to/local/embedding"
-        )
-        print(f"本地 Embedding 提供商可用: {local_embedding.is_available()}")
-        
-    except Exception as e:
-        print(f"本地提供商示例失败: {e}")
+
 
 
 def demo_stream_completion():
@@ -209,7 +187,6 @@ if __name__ == "__main__":
     demo_unified_openai_provider()
     demo_separate_providers()
     demo_factory_methods()
-    demo_local_providers()
     demo_stream_completion()
     demo_batch_embeddings()
     
@@ -217,5 +194,5 @@ if __name__ == "__main__":
     print("示例完成")
     print("\n注意：")
     print("1. 要测试真实的 API 调用，请提供正确的 api_key 和 base_url")
-    print("2. 本地模型提供商目前为空实现，需要后续扩展")
-    print("3. 可以根据需要扩展支持更多的模型提供商（如 HuggingFace、Ollama 等）") 
+    print("2. 目前仅支持 API 模型提供商")
+    print("3. 可以根据需要扩展支持更多的 API 提供商") 
