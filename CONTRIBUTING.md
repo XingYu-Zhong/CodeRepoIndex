@@ -146,7 +146,7 @@ CodeRepoIndex/
 
 - 查看现有的 [Issues](https://github.com/XingYu-Zhong/CodeRepoIndex/issues)
 - 创建新的 issue 寻求帮助
-- 联系维护者：contact@coderepoindex.com
+- 联系维护者：zhongxingyuemail@gmail.com
 
 ## 行为准则
 

@@ -179,8 +179,8 @@ Desktop.ini
 # Vector databases and embeddings
 *.index
 *.faiss
-embeddings/
-vectors/
+.embeddings/
+.vectors/
 *.pkl
 *.pickle
 
