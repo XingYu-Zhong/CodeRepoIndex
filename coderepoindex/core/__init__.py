@@ -6,6 +6,7 @@
 
 from .indexer import CodeIndexer, IndexingProgress, create_code_indexer
 from .searcher import CodeSearcher, create_code_searcher
+from .project_manager import ProjectManager, ProjectInfo, create_project_manager
 from .models import (
     CodeBlock,
     RepositoryIndex,
@@ -20,6 +21,7 @@ __all__ = [
     # 主要类
     "CodeIndexer",
     "CodeSearcher",
+    "ProjectManager",
     "IndexingProgress",
     
     # 数据模型
@@ -28,10 +30,12 @@ __all__ = [
     "SearchQuery",
     "SearchResult",
     "BlockType",
+    "ProjectInfo",
     
     # 工厂函数
     "create_code_indexer",
     "create_code_searcher",
+    "create_project_manager",
     "create_repository_index",
     "create_search_query"
 ] 

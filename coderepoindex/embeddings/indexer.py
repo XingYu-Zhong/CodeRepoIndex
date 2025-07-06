@@ -238,10 +238,16 @@ class EmbeddingIndexer(BaseIndexer):
             vector_data = []
             for node in nodes:
                 if node.embedding:
+                    # 使用完整的node元数据，而不只是doc_id
+                    node_metadata = node.metadata.copy() if node.metadata else {}
+                    # 确保有doc_id用于向后兼容
+                    if 'doc_id' not in node_metadata:
+                        node_metadata['doc_id'] = metadata.get('doc_id', node.node_id)
+                    
                     vector_data.append((
                         node.node_id,
                         node.embedding,
-                        {'doc_id': metadata.get('doc_id', node.node_id)}
+                        node_metadata
                     ))
             
             if vector_data:

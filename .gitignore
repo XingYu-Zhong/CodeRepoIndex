@@ -208,3 +208,10 @@ logs/
 config.ini
 settings.local.py
 .secrets 
+config.json
+
+
+.stores
+
+test.py
+vector_search_test.py

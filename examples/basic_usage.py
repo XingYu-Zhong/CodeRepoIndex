@@ -1,289 +1,223 @@
 """
 CodeRepoIndex 基本使用示例
 
-展示如何使用配置中心和新的API配置方式来创建索引和搜索代码。
+演示如何使用 CodeRepoIndex 进行代码仓库索引和搜索，
+包括新的分离式配置方式。
 """
 
 import os
-from coderepoindex import (
-    CodeIndexer, 
-    CodeSearcher,
-    load_config,
-    get_config_template
-)
-from coderepoindex.repository import create_local_config
+from pathlib import Path
+
+# 导入核心模块
+from coderepoindex.core import CodeIndexer, CodeSearcher
+from coderepoindex.config import load_config, ConfigManager
 
 
 def main():
-    """主函数演示配置中心的使用"""
+    """主函数：演示各种配置和使用方式"""
     
-    print("🚀 CodeRepoIndex 基本使用示例")
-    print("=" * 50)
+    print("=== CodeRepoIndex 基本使用示例 ===\n")
     
-    # ============================================================================
-    # 方式1: 使用配置中心 - 从环境变量或配置文件加载配置
-    # ============================================================================
-    print("\n📋 方式1: 使用配置中心")
-    print("-" * 30)
+    # ========== 配置方式演示 ==========
+    print("1. 配置方式演示:")
     
-    # 1.1 从环境变量加载配置
-    print("1.1 从环境变量加载配置...")
+    # 方式1: 使用环境变量配置（推荐用于生产环境）
+    print("\n方式1: 环境变量配置")
+    os.environ['CODEREPO_LLM_API_KEY'] = 'your-llm-api-key'
+    os.environ['CODEREPO_LLM_BASE_URL'] = 'https://dashscope.aliyuncs.com/compatible-mode/v1'
+    os.environ['CODEREPO_LLM_MODEL'] = 'qwen-plus'
     
-    # 设置环境变量（在实际使用中，您应该在shell中设置这些变量）
-    # export CODEREPO_API_KEY="your-api-key"
-    # export CODEREPO_BASE_URL="https://dashscope-intl.aliyuncs.com/compatible-mode/v1"
-    # export CODEREPO_STORAGE_PATH="./my_storage"
+    os.environ['CODEREPO_EMBEDDING_API_KEY'] = 'your-embedding-api-key'
+    os.environ['CODEREPO_EMBEDDING_BASE_URL'] = 'https://dashscope.aliyuncs.com/compatible-mode/v1'
+    os.environ['CODEREPO_EMBEDDING_MODEL'] = 'text-embedding-v3'
     
+    config1 = load_config()
+    print(f"  LLM配置: {config1.llm.model_name} @ {config1.llm.base_url}")
+    print(f"  Embedding配置: {config1.embedding.model_name} @ {config1.embedding.base_url}")
+    
+    # 方式2: 使用配置文件
+    print("\n方式2: 配置文件")
+    config2 = load_config("config_example.json")
+    print(f"  项目名称: {config2.project_name}")
+    print(f"  LLM模型: {config2.llm.model_name}")
+    print(f"  Embedding模型: {config2.embedding.model_name}")
+    
+    # 方式3: 使用字典配置
+    print("\n方式3: 字典配置")
+    config_dict = {
+        "llm": {
+            "api_key": "your-llm-key",
+            "base_url": "https://api.openai.com/v1",
+            "model_name": "gpt-4"
+        },
+        "embedding": {
+            "api_key": "your-embedding-key", 
+            "base_url": "https://api.openai.com/v1",
+            "model_name": "text-embedding-ada-002"
+        },
+        "storage": {
+            "base_path": "./custom_storage"
+        }
+    }
+    config3 = load_config(config_dict=config_dict)
+    print(f"  LLM: {config3.llm.model_name}")
+    print(f"  Embedding: {config3.embedding.model_name}")
+    print(f"  存储路径: {config3.storage.base_path}")
+    
+    # 方式4: 直接传参（最高优先级）
+    print("\n方式4: 直接传参")
+    config4 = load_config(
+        llm_api_key="direct-llm-key",
+        llm_model_name="qwen-turbo",
+        embedding_api_key="direct-embedding-key", 
+        embedding_model_name="text-embedding-v2"
+    )
+    print(f"  LLM密钥: {config4.llm.api_key}")
+    print(f"  Embedding密钥: {config4.embedding.api_key}")
+    
+    # 方式5: 兼容性配置（统一API key）
+    print("\n方式5: 兼容性配置")
+    config5 = load_config(
+        api_key="unified-api-key",
+        base_url="https://unified-api.example.com"
+    )
+    print(f"  LLM API Key: {config5.llm.api_key}")
+    print(f"  Embedding API Key: {config5.embedding.api_key}")
+    print(f"  LLM Base URL: {config5.llm.base_url}")
+    print(f"  Embedding Base URL: {config5.embedding.base_url}")
+    
+    # ========== 索引功能演示 ==========
+    print("\n\n2. 索引功能演示:")
+    
+    # 创建索引器
+    indexer = CodeIndexer()
+    
+    # 索引本地代码仓库
+    repo_path = "./test_repo"  # 替换为实际的仓库路径
+    
+    print(f"\n正在索引仓库: {repo_path}")
     try:
-        # 从环境变量和默认配置加载
-        config = load_config()
-        print(f"✅ 配置加载成功: {config.project_name} v{config.version}")
-        print(f"   - 存储路径: {config.storage.base_path}")
-        print(f"   - 向量后端: {config.storage.vector_backend}")
-        print(f"   - 嵌入模型: {config.embedding.model_name}")
-        
-        # 使用配置创建索引器和搜索器
-        indexer = CodeIndexer(config=config)
-        searcher = CodeSearcher(config=config)
-        
-        print("✅ 使用配置中心创建索引器和搜索器成功")
-        
-    except Exception as e:
-        print(f"⚠️  配置加载失败: {e}")
-        print("💡 提示: 请设置环境变量 CODEREPO_API_KEY 和 CODEREPO_BASE_URL")
-    
-    # 1.2 从配置文件加载配置
-    print("\n1.2 从配置文件加载配置...")
-    
-    # 创建示例配置文件
-    config_file = "./config_example.json"
-    if not os.path.exists(config_file):
-        example_config = get_config_template("development")
-        # 更新配置
-        example_config.embedding.api_key = "your-api-key-here"
-        example_config.embedding.base_url = "https://dashscope-intl.aliyuncs.com/compatible-mode/v1"
-        example_config.storage.base_path = "./storage_example"
-        
-        from coderepoindex.config import save_config
-        save_config(config_file)
-        print(f"✅ 创建示例配置文件: {config_file}")
-    
-    try:
-        # 从文件加载配置
-        config = load_config(config_path=config_file)
-        print(f"✅ 从文件加载配置成功: {config_file}")
-    except Exception as e:
-        print(f"❌ 从文件加载配置失败: {e}")
-    
-    # ============================================================================
-    # 方式2: 直接传递配置参数
-    # ============================================================================
-    print("\n📋 方式2: 直接传递配置参数")
-    print("-" * 30)
-    
-    try:
-        # 2.1 直接传递API配置
-        print("2.1 直接传递API配置...")
-        
-        # 在实际使用中，请替换为您的真实API密钥和基础URL
-        api_key = os.getenv("CODEREPO_API_KEY", "your-api-key-here")
-        base_url = os.getenv("CODEREPO_BASE_URL", "https://dashscope-intl.aliyuncs.com/compatible-mode/v1")
-        
-        indexer = CodeIndexer(
-            api_key=api_key,
-            base_url=base_url,
-            storage_backend="local",
-            vector_backend="memory",
-            storage_path="./storage_direct"
+        # 执行索引
+        index_result = indexer.index_repository(
+            repo_path,
+            include_patterns=["*.py", "*.js", "*.ts"],
+            exclude_patterns=["*.pyc", "node_modules/*"]
         )
         
-        searcher = CodeSearcher(
-            api_key=api_key,
-            base_url=base_url,
-            storage_backend="local",
-            vector_backend="memory",
-            storage_path="./storage_direct"
-        )
-        
-        print("✅ 直接配置API参数创建成功")
+        print(f"索引完成!")
+        print(f"  - 总文件数: {index_result.total_files}")
+        print(f"  - 代码块数: {index_result.total_blocks}")
+        print(f"  - 索引大小: {index_result.index_size_mb:.2f} MB")
+        print(f"  - 耗时: {index_result.duration:.2f} 秒")
         
     except Exception as e:
-        print(f"❌ 直接配置失败: {e}")
+        print(f"索引失败: {e}")
+        print("注意: 请确保目标仓库路径存在且包含代码文件")
     
-    # ============================================================================
-    # 方式3: 使用配置模板
-    # ============================================================================
-    print("\n📋 方式3: 使用配置模板")
-    print("-" * 30)
+    # ========== 搜索功能演示 ==========
+    print("\n\n3. 向量语义搜索演示:")
     
-    try:
-        # 3.1 使用开发模板
-        print("3.1 使用开发模板...")
-        dev_config = get_config_template("development")
-        
-        # 更新API配置
-        dev_config.embedding.api_key = os.getenv("CODEREPO_API_KEY", "your-api-key-here")
-        dev_config.embedding.base_url = os.getenv("CODEREPO_BASE_URL", "https://dashscope-intl.aliyuncs.com/compatible-mode/v1")
-        
-        indexer = CodeIndexer(config=dev_config)
-        searcher = CodeSearcher(config=dev_config)
-        
-        print("✅ 使用开发模板创建成功")
-        print(f"   - 日志级别: {dev_config.log_level}")
-        print(f"   - 存储路径: {dev_config.storage.base_path}")
-        print(f"   - 批处理大小: {dev_config.embedding.batch_size}")
-        
-        # 3.2 使用生产模板
-        print("\n3.2 使用生产模板...")
-        prod_config = get_config_template("production")
-        prod_config.embedding.api_key = os.getenv("CODEREPO_API_KEY", "your-api-key-here")
-        prod_config.embedding.base_url = os.getenv("CODEREPO_BASE_URL", "https://dashscope-intl.aliyuncs.com/compatible-mode/v1")
-        
-        print("✅ 生产模板配置:")
-        print(f"   - 日志级别: {prod_config.log_level}")
-        print(f"   - 向量后端: {prod_config.storage.vector_backend}")
-        print(f"   - 缓存大小: {prod_config.storage.cache_size}")
-        print(f"   - 批处理大小: {prod_config.embedding.batch_size}")
-        
-    except Exception as e:
-        print(f"❌ 配置模板使用失败: {e}")
+    # 创建搜索器
+    searcher = CodeSearcher()
     
-    # ============================================================================
-    # 方式4: 动态配置更新
-    # ============================================================================
-    print("\n📋 方式4: 动态配置更新")
-    print("-" * 30)
+    # 搜索示例
+    search_queries = [
+        "函数定义",
+        "异常处理", 
+        "数据库连接",
+        "API接口",
+        "配置管理"
+    ]
     
-    try:
-        # 4.1 在运行时更新配置
-        print("4.1 在运行时更新配置...")
-        
-        from coderepoindex.config import update_config, get_current_config
-        
-        # 更新全局配置
-        update_config(
-            api_key=os.getenv("CODEREPO_API_KEY", "your-api-key-here"),
-            base_url=os.getenv("CODEREPO_BASE_URL", "https://dashscope-intl.aliyuncs.com/compatible-mode/v1"),
-            storage_backend="local",
-            vector_backend="memory"
-        )
-        
-        # 获取更新后的配置
-        current_config = get_current_config()
-        if current_config:
-            print("✅ 配置更新成功")
-            print(f"   - API Key: {'***' + current_config.embedding.api_key[-8:] if current_config.embedding.api_key else 'None'}")
-            print(f"   - Base URL: {current_config.embedding.base_url}")
-        
-    except Exception as e:
-        print(f"❌ 动态配置更新失败: {e}")
+    with searcher:
+        for query in search_queries:
+            print(f"\n搜索: '{query}'")
+            try:
+                results = searcher.search(
+                    query=query,
+                    top_k=3,
+                    similarity_threshold=0.3
+                )
+                
+                if results:
+                    print(f"  找到 {len(results)} 个相关结果:")
+                    for i, result in enumerate(results[:2], 1):
+                        print(f"    {i}. {result.block.file_path}:{result.block.line_start}")
+                        print(f"       相似度: {result.score:.3f}")
+                        print(f"       类型: {result.block.block_type}")
+                        print(f"       函数: {result.block.name}")
+                else:
+                    print("  未找到相关结果")
+                    
+            except Exception as e:
+                print(f"  搜索失败: {e}")
     
-    # ============================================================================
-    # 实际使用示例: 索引和搜索
-    # ============================================================================
-    print("\n📋 实际使用示例: 索引和搜索")
-    print("-" * 30)
+    # ========== 高级过滤搜索演示 ==========
+    print("\n\n4. 高级过滤搜索演示:")
     
-    if os.getenv("CODEREPO_API_KEY"):
+    # 语言过滤搜索
+    print("\n按语言过滤搜索:")
+    with searcher:
         try:
-            print("5.1 创建索引器和搜索器...")
-            
-            # 使用环境变量配置
-            config = load_config(
-                api_key=os.getenv("CODEREPO_API_KEY"),
-                base_url=os.getenv("CODEREPO_BASE_URL", "https://dashscope-intl.aliyuncs.com/compatible-mode/v1"),
-                storage_backend="local",
-                vector_backend="memory",
-                storage_base_path="./storage_demo"
+            results = searcher.search(
+                query="错误处理",
+                top_k=5,
+                language="python",
+                similarity_threshold=0.4
             )
-            
-            indexer = CodeIndexer(config=config)
-            searcher = CodeSearcher(config=config)
-            
-            print("✅ 索引器和搜索器创建成功")
-            
-            # 5.2 创建仓库索引
-            print("\n5.2 创建仓库索引...")
-            
-            # 使用当前目录作为示例仓库
-            repo_config = create_local_config(".")
-            
-            # 模拟索引创建（实际使用中会执行完整的索引流程）
-            print("📚 准备为当前目录创建索引...")
-            print("   注意: 这是演示，实际使用时会调用 indexer.index_repository(repo_config)")
-            
-            # stats = indexer.index_repository(repo_config)
-            # print(f"✅ 索引创建完成: {stats}")
-            
-            # 5.3 执行搜索
-            print("\n5.3 执行搜索...")
-            
-            search_queries = [
-                "配置管理和API密钥",
-                "代码索引和向量存储",
-                "搜索算法实现"
-            ]
-            
-            for query in search_queries:
-                print(f"🔍 搜索: '{query}'")
-                
-                # 模拟搜索（实际使用中会执行真实搜索）
-                print("   注意: 这是演示，实际使用时会调用 searcher.search(query)")
-                
-                # results = searcher.search(query, top_k=3)
-                # if results:
-                #     for i, result in enumerate(results, 1):
-                #         print(f"  {i}. {result.file_path} (相似度: {result.similarity_score:.3f})")
-                # else:
-                #     print("  😔 没有找到相关结果")
+            print(f"  Python错误处理结果: {len(results)} 个")
+            for result in results[:2]:
+                print(f"    - {result.block.file_path}: {result.block.name} (分数: {result.score:.3f})")
             
         except Exception as e:
-            print(f"❌ 实际使用示例失败: {e}")
-    else:
-        print("⚠️  跳过实际使用示例 - 请设置 CODEREPO_API_KEY 环境变量")
+            print(f"  语言过滤搜索失败: {e}")
     
-    # ============================================================================
-    # 配置最佳实践
-    # ============================================================================
-    print("\n📋 配置最佳实践")
-    print("-" * 30)
+    # 代码块类型过滤搜索
+    print("\n按代码块类型过滤搜索:")
+    with searcher:
+        try:
+            from coderepoindex.core.models import BlockType
+            results = searcher.search(
+                query="数据处理",
+                top_k=5,
+                block_type=BlockType.FUNCTION,
+                similarity_threshold=0.3
+            )
+            print(f"  函数级搜索结果: {len(results)} 个")
+            for result in results[:2]:
+                print(f"    - {result.block.file_path}: {result.block.name} (分数: {result.score:.3f})")
+                
+        except Exception as e:
+            print(f"  类型过滤搜索失败: {e}")
     
-    print("""
-🔧 配置最佳实践:
-
-1. 环境变量配置 (推荐):
-   export CODEREPO_API_KEY="your-api-key"
-   export CODEREPO_BASE_URL="https://dashscope-intl.aliyuncs.com/compatible-mode/v1"
-   export CODEREPO_STORAGE_PATH="./storage"
-   export CODEREPO_LOG_LEVEL="INFO"
-
-2. 配置文件 (适合复杂配置):
-   创建 config.json 或 config.yaml 文件
-   使用 load_config("config.json") 加载
-
-3. 配置模板 (适合不同环境):
-   - development: 开发环境，调试日志，内存向量存储
-   - production: 生产环境，警告日志，ChromaDB向量存储
-   - minimal: 最小配置，错误日志，基础功能
-
-4. 安全考虑:
-   - 不要在代码中硬编码API密钥
-   - 使用环境变量或安全的配置文件
-   - 在版本控制中排除配置文件
-
-5. 性能优化:
-   - 根据数据量选择合适的向量后端
-   - 调整批处理大小以优化内存使用
-   - 启用缓存以提高搜索性能
-    """)
+    # ========== 配置管理演示 ==========
+    print("\n\n5. 配置管理演示:")
     
-    print("\n🎉 示例完成！")
-    print("\n💡 下一步:")
-    print("1. 设置您的API密钥和基础URL")
-    print("2. 选择合适的配置方式")
-    print("3. 开始索引您的代码仓库")
-    print("4. 享受强大的语义搜索功能！")
+    # 获取配置管理器
+    config_manager = ConfigManager()
+    current_config = config_manager.get_config()
+    
+    if current_config:
+        print(f"当前配置:")
+        print(f"  - 项目: {current_config.project_name}")
+        print(f"  - LLM模型: {current_config.llm.model_name}")
+        print(f"  - Embedding模型: {current_config.embedding.model_name}")
+        print(f"  - 存储后端: {current_config.storage.storage_backend}")
+        print(f"  - 向量后端: {current_config.storage.vector_backend}")
+    
+    # 动态更新配置
+    print("\n动态更新配置:")
+    config_manager.update_config(
+        log_level="DEBUG",
+        storage_cache_size=2000
+    )
+    updated_config = config_manager.get_config()
+    print(f"  - 日志级别: {updated_config.log_level}")
+    print(f"  - 缓存大小: {updated_config.storage.cache_size}")
+    
+    print("\n=== 示例完成 ===")
 
 
 if __name__ == "__main__":
+    # 运行示例
     main() 

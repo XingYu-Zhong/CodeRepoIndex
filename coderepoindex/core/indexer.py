@@ -16,8 +16,8 @@ if TYPE_CHECKING:
 
 from ..repository import RepositoryFetcher, RepoConfig
 from ..parsers import DirectoryParser, CodeParser, DirectoryConfig
-from ..embeddings import EmbeddingIndexer, create_indexer
-from ..storage import create_storage_backend, CompositeStorage
+from ..embeddings import EmbeddingIndexer, create_indexer, create_retriever
+from .storage_adapter import create_embedding_storage, EmbeddingStorageAdapter
 from .models import (
     CodeBlock, 
     RepositoryIndex, 
@@ -90,8 +90,6 @@ class CodeIndexer:
 
     def __init__(
         self,
-        storage_backend: str = "local",
-        vector_backend: str = "chromadb",
         embedding_provider=None,
         storage_path: str = "./storage",
         config: Optional['CodeRepoConfig'] = None,
@@ -103,8 +101,6 @@ class CodeIndexer:
         初始化代码索引器
 
         Args:
-            storage_backend: 存储后端类型
-            vector_backend: 向量存储后端类型
             embedding_provider: 嵌入提供商
             storage_path: 存储路径
             config: 项目配置对象
@@ -127,10 +123,6 @@ class CodeIndexer:
                         config_data['api_key'] = api_key
                     if base_url:
                         config_data['base_url'] = base_url
-                    if storage_backend:
-                        config_data['storage_backend'] = storage_backend
-                    if vector_backend:
-                        config_data['vector_backend'] = vector_backend
                     if storage_path:
                         config_data['storage_base_path'] = storage_path
                     config_data.update(kwargs)
@@ -143,31 +135,13 @@ class CodeIndexer:
                 logger.warning("配置中心模块未找到，使用传统配置方式")
                 self.config = None
         
-        # 根据配置创建存储后端
-        storage_config = {}
-        if self.config:
-            storage_config = {
-                'storage_type': self.config.storage.storage_backend,
-                'vector_backend': self.config.storage.vector_backend,
-                'base_path': self.config.storage.base_path,
-                **self.config.storage.extra_params
-            }
-        else:
-            storage_config = {
-                'storage_type': storage_backend,
-                'vector_backend': vector_backend,
-                'base_path': storage_path,
-                **kwargs
-            }
-        
-        self.storage = create_storage_backend(**storage_config)
-        
-        # 创建嵌入索引器
+        # 创建嵌入提供商
         if embedding_provider is None:
             try:
                 from ..models import create_embedding_provider
                 if self.config:
                     # 使用配置中心的嵌入配置
+                    logger.info(f"使用配置中心的嵌入配置: model={self.config.embedding.model_name}, api_key={self.config.embedding.api_key[:10] if self.config.embedding.api_key else 'None'}..., base_url={self.config.embedding.base_url}")
                     embedding_provider = create_embedding_provider(
                         provider_type=self.config.embedding.provider_type,
                         model_name=self.config.embedding.model_name,
@@ -186,15 +160,34 @@ class CodeIndexer:
             except ImportError:
                 logger.warning("models模块未找到，将使用默认嵌入配置")
                 embedding_provider = None
+
+        # 根据配置创建embedding存储适配器
+        storage_config = {}
+        if self.config:
+            storage_config = {
+                'storage_path': self.config.storage.base_path,
+                'embedding_provider': embedding_provider,
+                # 传递embedding配置（如果embedding_provider为None）
+                'provider_type': self.config.embedding.provider_type,
+                'model_name': self.config.embedding.model_name,
+                'api_key': self.config.embedding.api_key,
+                'base_url': self.config.embedding.base_url,
+                'timeout': self.config.embedding.timeout,
+                'batch_size': self.config.embedding.batch_size,
+                **self.config.embedding.extra_params,
+                **self.config.storage.extra_params
+            }
+        else:
+            storage_config = {
+                'storage_path': storage_path,
+                'embedding_provider': embedding_provider,
+                **kwargs
+            }
         
-        # 设置嵌入索引器的存储路径
-        embed_storage_path = f"{storage_config['base_path']}/embeddings"
+        self.storage = create_embedding_storage(**storage_config)
         
-        self.embedding_indexer = create_indexer(
-            embedding_provider=embedding_provider,
-            persist_dir=embed_storage_path,
-            **kwargs
-        )
+        # 直接使用storage的embedding组件
+        self.embedding_indexer = self.storage.indexer
         
         # 创建解析器
         self.code_parser = CodeParser()
@@ -202,7 +195,7 @@ class CodeIndexer:
         # 初始化组件
         self._connected = False
         
-        logger.info(f"代码索引器初始化完成: storage={storage_config['storage_type']}, vector={storage_config['vector_backend']}")
+        logger.info(f"代码索引器初始化完成: storage_path={storage_config['storage_path']}")
 
     def connect(self) -> None:
         """连接所有存储后端"""
@@ -243,6 +236,7 @@ class CodeIndexer:
         self,
         repo_config: RepoConfig,
         progress_callback: Optional[Callable[[IndexingProgress], None]] = None,
+        repository_id: Optional[str] = None,
         **kwargs
     ) -> Dict[str, Any]:
         """
@@ -251,6 +245,7 @@ class CodeIndexer:
         Args:
             repo_config: 仓库配置
             progress_callback: 进度回调函数
+            repository_id: 仓库ID（可选，不提供则自动生成）
             **kwargs: 其他配置参数
 
         Returns:
@@ -278,6 +273,11 @@ class CodeIndexer:
                 commit_hash=repo_config.commit or "",
                 **kwargs
             )
+            
+            # 如果外部指定了repository_id，覆盖自动生成的
+            if repository_id:
+                repository_index.repository_id = repository_id
+                logger.info(f"使用外部指定的仓库ID: {repository_id}")
             
             # 3. 解析代码文件
             code_blocks = self._parse_repository(
@@ -432,11 +432,12 @@ class CodeIndexer:
     ) -> List[CodeBlock]:
         """解析仓库中的所有代码文件"""
         
-        # 创建目录解析器
-        dir_config = DirectoryConfig(
-            target_directory=repo_path,
-            include_patterns=["*.py", "*.js", "*.ts", "*.java", "*.go", "*.cpp", "*.c", "*.h"],
-            exclude_patterns=[
+        # 创建目录解析器配置
+        from ..parsers import create_directory_config
+        
+        dir_config = create_directory_config(
+            only_extensions={"py", "js", "ts", "java", "go", "cpp", "c", "h"},
+            ignore_patterns=[
                 "__pycache__", "node_modules", ".git", "*.pyc", "*.min.js"
             ]
         )
@@ -444,40 +445,30 @@ class CodeIndexer:
         dir_parser = DirectoryParser(dir_config)
         
         # 解析目录
-        result = dir_parser.parse_directory()
+        result = dir_parser.parse_directory(repo_path)
         
         # 更新进度
-        progress.total_files = len(result.file_results)
+        progress.total_files = result.total_files
         
         # 转换为CodeBlock
         code_blocks = []
         
-        for file_result in result.file_results:
-            progress.current_file = file_result.file_path
+        for snippet in result.snippets:
             progress.processed_files += 1
             
             if progress_callback:
                 progress_callback(progress)
             
-            # 跳过有错误的文件
-            if file_result.errors:
-                progress.errors.extend(file_result.errors)
-                continue
-            
             # 转换代码片段
-            for snippet in file_result.snippets:
-                try:
-                    code_block = CodeBlock.from_code_snippet(snippet, repository_id)
-                    # 设置语言信息
-                    if file_result.language:
-                        code_block.language = file_result.language.value
-                    code_blocks.append(code_block)
-                    progress.total_blocks += 1
-                    
-                except Exception as e:
-                    error_msg = f"转换代码片段失败 {snippet.path}: {e}"
-                    progress.errors.append(error_msg)
-                    logger.error(error_msg)
+            try:
+                code_block = CodeBlock.from_code_snippet(snippet, repository_id)
+                code_blocks.append(code_block)
+                progress.total_blocks += 1
+                
+            except Exception as e:
+                error_msg = f"转换代码片段失败 {snippet.path}: {e}"
+                progress.errors.append(error_msg)
+                logger.error(error_msg)
         
         return code_blocks
 
@@ -487,80 +478,250 @@ class CodeIndexer:
         progress: IndexingProgress,
         progress_callback: Optional[Callable[[IndexingProgress], None]] = None
     ) -> None:
-        """为代码块生成向量嵌入"""
+        """为代码块生成向量嵌入并存储到embedding模块"""
         
-        logger.info(f"开始生成向量嵌入，共 {len(code_blocks)} 个代码块")
+        print(f"🔥🔥🔥 _generate_embeddings被调用了！代码块数量: {len(code_blocks)}")
+        logger.info(f"开始使用embedding模块生成向量嵌入，共 {len(code_blocks)} 个代码块")
         
-        # 批量生成嵌入
-        batch_size = 10
-        for i in range(0, len(code_blocks), batch_size):
-            batch = code_blocks[i:i + batch_size]
+        if not code_blocks:
+            print("🔥 代码块为空，直接返回")
+            return
+        
+        try:
+            print("🔥 第1步：开始转换为文档格式")
+            # 1. 将CodeBlock转换为embedding模块所需的文档格式
+            documents = []
+            code_block_map = {}  # 用于反向查找
             
-            try:
-                # 准备文档数据
-                documents = []
-                for code_block in batch:
-                    # 组合代码和元数据作为文档内容
-                    content = f"{code_block.name}\n{code_block.content}"
-                    if code_block.signature:
-                        content = f"{code_block.signature}\n{content}"
+            for code_block in code_blocks:
+                # 组合代码和元数据作为文档内容
+                content = f"{code_block.name}\n{code_block.content}"
+                if code_block.signature:
+                    content = f"{code_block.signature}\n{content}"
+                
+                # 构建文档元数据
+                metadata = {
+                    "code_block_id": code_block.block_id,
+                    "repository_id": code_block.repository_id,
+                    "file_path": code_block.file_path,
+                    "name": code_block.name,
+                    "signature": code_block.signature,
+                    "block_type": code_block.block_type.value if code_block.block_type else "unknown",
+                    "language": code_block.language or "unknown",
+                    "line_start": code_block.line_start,
+                    "line_end": code_block.line_end,
+                    "class_name": code_block.class_name,
+                    "namespace": code_block.namespace,
+                    "keywords": code_block.keywords,
+                    "search_text": code_block.search_text
+                }
+                
+                # 创建文档
+                doc = {
+                    "text": content,
+                    "metadata": metadata
+                }
+                documents.append(doc)
+                
+                # 建立映射关系
+                code_block_map[len(documents) - 1] = code_block
+            
+            print(f"🔥 第1步完成：转换了 {len(documents)} 个文档")
+            
+            print("🔥 第2步：开始使用EmbeddingIndexer构建索引")
+            # 2. 使用EmbeddingIndexer构建索引
+            logger.info(f"使用EmbeddingIndexer构建索引，文档数: {len(documents)}")
+            self.embedding_indexer.build_index(documents, clear_existing=False)
+            print("🔥 第2步完成：EmbeddingIndexer构建索引成功")
+            
+        except Exception as e:
+            print(f"🔥 第1-2步出现异常: {e}")
+            print(f"🔥 异常类型: {type(e)}")
+            import traceback
+            print(f"🔥 完整堆栈: {traceback.format_exc()}")
+            logger.error(f"使用EmbeddingIndexer生成嵌入失败: {e}")
+            raise
+        
+        try:
+            print("🔥 第3步：开始检查EmbeddingIndexer内部状态")
+            # 调试：检查EmbeddingIndexer的内部状态
+            logger.info(f"EmbeddingIndexer索引构建完成")
+            logger.info(f"DocumentStore中的节点数: {len(self.embedding_indexer.document_store._nodes)}")
+            logger.info(f"VectorStore中的向量数: {len(self.embedding_indexer.vector_store._embeddings)}")
+            print(f"🔥 第3步完成：DocumentStore节点数={len(self.embedding_indexer.document_store._nodes)}, VectorStore向量数={len(self.embedding_indexer.vector_store._embeddings)}")
+            
+        except Exception as e:
+            print(f"🔥 第3步异常: {e}")
+            logger.error(f"检查EmbeddingIndexer状态失败: {e}")
+        
+        try:
+            print("🔥 第4步：开始关联向量到代码块")
+            # 调试：显示前几个节点的metadata
+            sample_nodes = list(self.embedding_indexer.document_store._nodes.values())[:3]
+            for i, node in enumerate(sample_nodes):
+                logger.info(f"节点 {i+1}: ID={node.node_id[:20]}...")
+                logger.info(f"  文本长度: {len(node.text) if node.text else 0}")
+                logger.info(f"  有嵌入: {'是' if node.embedding else '否'}")
+                logger.info(f"  元数据: {node.metadata}")
+                logger.info(f"  元数据中的code_block_id: {node.metadata.get('code_block_id') if node.metadata else 'None'}")
+            
+            # 3. 从embedding模块获取生成的向量并关联到代码块
+            embedded_count = 0
+            
+            # 首先调试：检查我们要查找的code_block_id
+            logger.info(f"要查找的代码块ID列表:")
+            for i, (doc_index, code_block) in enumerate(list(code_block_map.items())[:5]):  # 只显示前5个
+                logger.info(f"  {i+1}. {code_block.block_id}")
+            
+            print(f"🔥 第4步：开始遍历 {len(code_block_map)} 个代码块进行向量关联")
+            
+            # 方法1：通过node_id直接查找（更可靠）
+            for doc_index, code_block in code_block_map.items():
+                try:
+                    # 查找对应的节点 - 改进查找逻辑
+                    found_node = None
                     
-                    documents.append({
-                        "text": content,
-                        "metadata": {
-                            "block_id": code_block.block_id,
-                            "repository_id": code_block.repository_id,
-                            "file_path": code_block.file_path,
-                            "block_type": code_block.block_type.value,
-                            "language": code_block.language,
-                            "name": code_block.name
-                        }
-                    })
-                
-                # 生成嵌入
-                self.embedding_indexer.build_index(documents)
-                
-                # 获取嵌入并设置到code_block
-                for j, code_block in enumerate(batch):
-                    # 这里简化处理，实际应该从embedding_indexer获取具体的向量
-                    # code_block.embedding = embedding_vector
+                    logger.debug(f"正在查找代码块 {code_block.block_id} 对应的节点...")
+                    
+                    # 遍历document_store中的所有节点
+                    nodes_checked = 0
+                    for node in self.embedding_indexer.document_store._nodes.values():
+                        nodes_checked += 1
+                        node_metadata = node.metadata or {}
+                        node_code_block_id = node_metadata.get("code_block_id")
+                        
+                        if nodes_checked <= 3:  # 调试前3个节点
+                            logger.debug(f"  检查节点 {node.node_id[:15]}..., 其code_block_id: {node_code_block_id}")
+                        
+                        if node_code_block_id == code_block.block_id:
+                            found_node = node
+                            logger.debug(f"  找到匹配节点: {node.node_id[:20]}...")
+                            break
+                    
+                    logger.debug(f"  共检查了 {nodes_checked} 个节点")
+                    
+                    if found_node and found_node.embedding:
+                        code_block.embedding = found_node.embedding
+                        embedded_count += 1
+                        logger.debug(f"为代码块 {code_block.block_id} 设置嵌入向量，维度: {len(found_node.embedding)}")
+                    else:
+                        # 如果通过code_block_id找不到，尝试通过其他方式
+                        logger.warning(f"通过code_block_id未找到代码块 {code_block.block_id} 对应的节点，尝试其他方式")
+                        
+                        # 方法2：通过文本内容模糊匹配
+                        target_content = f"{code_block.name}\n{code_block.content}"
+                        if code_block.signature:
+                            target_content = f"{code_block.signature}\n{target_content}"
+                        
+                        logger.debug(f"尝试通过文本匹配，目标内容前100字符: {target_content[:100]}")
+                        
+                        for node in self.embedding_indexer.document_store._nodes.values():
+                            # 检查文本是否匹配
+                            if node.text and target_content[:100] in node.text[:100]:
+                                if node.embedding:
+                                    code_block.embedding = node.embedding
+                                    embedded_count += 1
+                                    logger.debug(f"通过文本匹配为代码块 {code_block.block_id} 设置嵌入向量")
+                                    break
+                        else:
+                            logger.warning(f"完全未找到代码块 {code_block.block_id} 对应的节点")
+                        
+                except Exception as e:
+                    print(f"🔥 处理代码块 {code_block.block_id} 时出现异常: {e}")
+                    logger.error(f"为代码块 {code_block.block_id} 关联嵌入失败: {e}")
+            
+            print(f"🔥 第4步完成：成功为 {embedded_count}/{len(code_blocks)} 个代码块生成嵌入向量")
+            logger.info(f"成功为 {embedded_count}/{len(code_blocks)} 个代码块生成嵌入向量")
+            
+        except Exception as e:
+            print(f"🔥 第4步异常: {e}")
+            logger.error(f"关联向量到代码块失败: {e}")
+        
+        try:
+            print("🔥 第5步：开始保存到存储")
+            # 4. 保存代码块到本地存储（包含嵌入向量）
+            saved_count = 0
+            saved_with_vector_count = 0
+            
+            for code_block in code_blocks:
+                try:
+                    # 保存到本地存储和向量存储
+                    self.storage.save_code_block_with_vector(code_block)
+                    saved_count += 1
+                    
+                    if code_block.embedding:
+                        saved_with_vector_count += 1
+                        logger.debug(f"保存代码块 {code_block.block_id} 及其向量到存储")
+                    else:
+                        logger.warning(f"代码块 {code_block.block_id} 没有向量，仅保存元数据")
+                        
+                except Exception as e:
+                    print(f"🔥 保存代码块 {code_block.block_id} 失败: {e}")
+                    logger.error(f"保存代码块 {code_block.block_id} 失败: {e}")
+            
+            print(f"🔥 第5步完成：成功保存 {saved_count} 个代码块到存储，其中 {saved_with_vector_count} 个包含向量")
+            logger.info(f"成功保存 {saved_count} 个代码块到存储，其中 {saved_with_vector_count} 个包含向量")
+            
+        except Exception as e:
+            print(f"🔥 第5步异常: {e}")
+            logger.error(f"保存到存储失败: {e}")
+        
+        try:
+            print("🔥 第6步：验证向量存储")
+            # 5. 验证向量是否正确保存
+            vector_stats = self.storage.vector_storage.get_stats()
+            logger.info(f"存储后向量统计: {vector_stats}")
+            
+            # 额外调试：检查向量存储中是否有数据
+            if hasattr(self.storage.vector_storage, 'vectors'):
+                actual_vector_count = len(self.storage.vector_storage.vectors)
+                logger.info(f"实际向量存储中的向量数: {actual_vector_count}")
+            elif hasattr(self.storage.vector_storage, 'collection'):
+                try:
+                    actual_vector_count = self.storage.vector_storage.collection.count()
+                    logger.info(f"ChromaDB中的向量数: {actual_vector_count}")
+                except:
                     pass
-                
-                progress.processed_blocks += len(batch)
-                
-                if progress_callback:
-                    progress_callback(progress)
+            
+            print("🔥 第6步完成：向量存储验证完成")
                     
-            except Exception as e:
-                error_msg = f"生成嵌入失败 批次 {i//batch_size + 1}: {e}"
-                progress.errors.append(error_msg)
-                logger.error(error_msg)
+        except Exception as e:
+            print(f"🔥 第6步异常: {e}")
+            logger.warning(f"获取向量统计失败: {e}")
+        
+        try:
+            print("🔥 第7步：更新进度")
+            # 6. 更新进度
+            if progress_callback:
+                progress.processed_blocks = len(code_blocks)
+                progress.current_stage = "embedding_complete"
+                progress_callback(progress)
+            print("🔥 第7步完成：进度更新完成")
+                
+        except Exception as e:
+            print(f"🔥 第7步异常: {e}")
+        
+        print("🔥🔥🔥 _generate_embeddings方法完成！")
 
     def _generate_embeddings_for_blocks(self, code_blocks: List[CodeBlock]) -> None:
         """为代码块生成嵌入（简化版）"""
-        documents = []
+        logger.info(f"为 {len(code_blocks)} 个代码块生成嵌入")
         
         for code_block in code_blocks:
-            content = f"{code_block.name}\n{code_block.content}"
-            if code_block.signature:
-                content = f"{code_block.signature}\n{content}"
-            
-            documents.append({
-                "text": content,
-                "metadata": {
-                    "block_id": code_block.block_id,
-                    "repository_id": code_block.repository_id,
-                    "file_path": code_block.file_path,
-                    "block_type": code_block.block_type.value,
-                    "language": code_block.language,
-                    "name": code_block.name
-                }
-            })
-        
-        try:
-            self.embedding_indexer.build_index(documents)
-        except Exception as e:
-            logger.error(f"生成嵌入失败: {e}")
+            try:
+                content = f"{code_block.name}\n{code_block.content}"
+                if code_block.signature:
+                    content = f"{code_block.signature}\n{content}"
+                
+                # 生成嵌入并设置到代码块
+                embedding = self.embedding_indexer.embedding_provider.get_embedding(content)
+                code_block.embedding = embedding
+                logger.debug(f"为代码块 {code_block.block_id} 生成嵌入成功")
+                
+            except Exception as e:
+                logger.error(f"为代码块 {code_block.block_id} 生成嵌入失败: {e}")
+                # 继续处理其他块
+                continue
 
     def _save_to_storage(
         self,
@@ -609,10 +770,9 @@ class CodeIndexer:
 
 # 便利函数
 def create_code_indexer(
-    storage_backend: str = "local",
-    vector_backend: str = "chromadb",
     storage_path: str = "./storage",
     config: Optional['CodeRepoConfig'] = None,
+    embedding_provider=None,
     api_key: Optional[str] = None,
     base_url: Optional[str] = None,
     **kwargs
@@ -621,10 +781,9 @@ def create_code_indexer(
     创建代码索引器
     
     Args:
-        storage_backend: 存储后端类型
-        vector_backend: 向量存储后端类型
         storage_path: 存储路径
         config: 项目配置对象
+        embedding_provider: 嵌入提供商
         api_key: API密钥
         base_url: API基础URL
         **kwargs: 其他配置参数
@@ -633,10 +792,9 @@ def create_code_indexer(
         CodeIndexer实例
     """
     return CodeIndexer(
-        storage_backend=storage_backend,
-        vector_backend=vector_backend,
         storage_path=storage_path,
         config=config,
+        embedding_provider=embedding_provider,
         api_key=api_key,
         base_url=base_url,
         **kwargs

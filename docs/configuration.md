@@ -2,93 +2,297 @@
 
 CodeRepoIndex 提供了强大的配置中心，支持多种配置方式，让您能够灵活地管理API密钥、存储设置、模型参数等。
 
-## 快速开始
+## 配置管理
 
-### 1. 环境变量配置 (推荐)
+CodeRepoIndex 提供了灵活的配置管理系统，支持分离配置 LLM 模型和 Embedding 模型的 API 密钥和基础 URL。
 
-最简单的配置方式是使用环境变量：
+## 配置结构
 
-```bash
-# 必需的配置
-export CODEREPO_API_KEY="your-api-key"
-export CODEREPO_BASE_URL="https://dashscope-intl.aliyuncs.com/compatible-mode/v1"
+### 新的分离式配置结构
 
-# 可选的配置
-export CODEREPO_STORAGE_PATH="./storage"
-export CODEREPO_LOG_LEVEL="INFO"
-export CODEREPO_VECTOR_BACKEND="memory"
-```
-
-然后在代码中：
-
-```python
-from coderepoindex import CodeIndexer, CodeSearcher, load_config
-
-# 自动从环境变量加载配置
-config = load_config()
-
-# 使用配置创建索引器和搜索器
-indexer = CodeIndexer(config=config)
-searcher = CodeSearcher(config=config)
-```
-
-### 2. 直接传递参数
-
-```python
-from coderepoindex import CodeIndexer, CodeSearcher
-
-# 直接传递配置参数
-indexer = CodeIndexer(
-    api_key="your-api-key",
-    base_url="https://dashscope-intl.aliyuncs.com/compatible-mode/v1",
-    storage_backend="local",
-    vector_backend="memory"
-)
-
-searcher = CodeSearcher(
-    api_key="your-api-key", 
-    base_url="https://dashscope-intl.aliyuncs.com/compatible-mode/v1",
-    storage_backend="local",
-    vector_backend="memory"
-)
-```
-
-### 3. 配置文件
-
-创建 `config.json` 文件：
+从 v1.0 开始，CodeRepoIndex 支持分别配置 LLM 模型和 Embedding 模型：
 
 ```json
 {
   "project_name": "CodeRepoIndex",
+  "version": "1.0.0",
   "log_level": "INFO",
-  "model": {
-    "api_key": "your-api-key",
-    "base_url": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1"
+  
+  "llm": {
+    "provider_type": "api",
+    "model_name": "qwen-plus",
+    "api_key": "your-llm-api-key",
+    "base_url": "https://dashscope.aliyuncs.com/compatible-mode/v1",
+    "timeout": 30.0,
+    "extra_params": {
+      "temperature": 0.7,
+      "max_tokens": 2000
+    }
   },
+  
+  "embedding": {
+    "provider_type": "api",
+    "model_name": "text-embedding-v3", 
+    "api_key": "your-embedding-api-key",
+    "base_url": "https://dashscope.aliyuncs.com/compatible-mode/v1",
+    "timeout": 30.0,
+    "batch_size": 32,
+    "extra_params": {}
+  },
+  
   "storage": {
     "storage_backend": "local",
     "vector_backend": "memory",
-    "base_path": "./storage"
-  },
-  "embedding": {
-    "api_key": "your-api-key",
-    "base_url": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1",
-    "model_name": "text-embedding-v3"
+    "base_path": "./storage",
+    "cache_enabled": true,
+    "cache_size": 1000,
+    "auto_backup": true,
+    "backup_interval": 3600
   }
 }
 ```
 
-在代码中加载：
+### 配置项说明
+
+#### LLM 配置 (`llm`)
+- `provider_type`: 提供商类型 (默认: "api")
+- `model_name`: LLM 模型名称 (如: "qwen-plus", "gpt-4")
+- `api_key`: LLM API 密钥
+- `base_url`: LLM API 基础 URL
+- `timeout`: 请求超时时间 (秒)
+- `extra_params`: 额外参数 (如 temperature, max_tokens)
+
+#### Embedding 配置 (`embedding`)
+- `provider_type`: 提供商类型 (默认: "api")
+- `model_name`: Embedding 模型名称 (如: "text-embedding-v3")
+- `api_key`: Embedding API 密钥
+- `base_url`: Embedding API 基础 URL
+- `timeout`: 请求超时时间 (秒)
+- `batch_size`: 批处理大小
+- `max_tokens`: 最大 token 数量
+- `extra_params`: 额外参数
+
+#### 存储配置 (`storage`)
+- `storage_backend`: 存储后端 ("local", "s3", "azure")
+- `vector_backend`: 向量存储后端 ("memory", "chromadb", "faiss")
+- `base_path`: 基础存储路径
+- `cache_enabled`: 是否启用缓存
+- `cache_size`: 缓存大小
+- `auto_backup`: 是否自动备份
+- `backup_interval`: 备份间隔 (秒)
+
+## 配置方式
+
+### 1. 环境变量配置（推荐）
+
+#### 分离式环境变量
+```bash
+# LLM 配置
+export CODEREPO_LLM_API_KEY="your-llm-api-key"
+export CODEREPO_LLM_BASE_URL="https://dashscope.aliyuncs.com/compatible-mode/v1"
+export CODEREPO_LLM_MODEL="qwen-plus"
+export CODEREPO_LLM_PROVIDER="api"
+
+# Embedding 配置
+export CODEREPO_EMBEDDING_API_KEY="your-embedding-api-key"
+export CODEREPO_EMBEDDING_BASE_URL="https://dashscope.aliyuncs.com/compatible-mode/v1"
+export CODEREPO_EMBEDDING_MODEL="text-embedding-v3"
+export CODEREPO_EMBEDDING_PROVIDER="api"
+
+# 存储配置
+export CODEREPO_STORAGE_PATH="./storage"
+export CODEREPO_STORAGE_BACKEND="local"
+export CODEREPO_VECTOR_BACKEND="memory"
+
+# 基础配置
+export CODEREPO_PROJECT_NAME="MyProject"
+export CODEREPO_LOG_LEVEL="INFO"
+```
+
+#### 兼容性环境变量（统一配置）
+```bash
+# 如果 LLM 和 Embedding 使用相同的 API
+export CODEREPO_API_KEY="your-unified-api-key"
+export CODEREPO_BASE_URL="https://api.example.com/v1"
+```
+
+### 2. 配置文件
+
+#### 创建配置文件
+```python
+from coderepoindex.config import load_config, save_config
+
+# 加载并修改配置
+config = load_config()
+config.llm.api_key = "your-llm-key"
+config.embedding.api_key = "your-embedding-key"
+
+# 保存到文件
+save_config("coderepoindex.json")
+```
+
+#### 使用配置文件
+```python
+from coderepoindex.config import load_config
+
+# 自动查找 coderepoindex.json 或 config.json
+config = load_config()
+
+# 或指定文件路径
+config = load_config("my_config.json")
+```
+
+### 3. 字典配置
 
 ```python
-from coderepoindex import load_config, CodeIndexer, CodeSearcher
+from coderepoindex.config import load_config
 
-# 从配置文件加载
-config = load_config("config.json")
+config_dict = {
+    "llm": {
+        "api_key": "llm-key",
+        "base_url": "https://llm-api.example.com",
+        "model_name": "gpt-4"
+    },
+    "embedding": {
+        "api_key": "embedding-key",
+        "base_url": "https://embedding-api.example.com", 
+        "model_name": "text-embedding-ada-002"
+    },
+    "storage": {
+        "base_path": "./custom_storage"
+    }
+}
 
-indexer = CodeIndexer(config=config)
-searcher = CodeSearcher(config=config)
+config = load_config(config_dict=config_dict)
 ```
+
+### 4. 直接传参
+
+```python
+from coderepoindex.config import load_config
+
+config = load_config(
+    llm_api_key="llm-key",
+    llm_base_url="https://llm-api.example.com",
+    llm_model_name="qwen-plus",
+    embedding_api_key="embedding-key",
+    embedding_base_url="https://embedding-api.example.com",
+    embedding_model_name="text-embedding-v3",
+    storage_base_path="./storage"
+)
+```
+
+### 5. 配置模板
+
+```python
+from coderepoindex.config import get_config_template, load_config
+
+# 使用预定义模板
+config = get_config_template("production")
+
+# 修改配置
+config.llm.api_key = "your-llm-key"
+config.embedding.api_key = "your-embedding-key"
+
+# 应用配置
+from coderepoindex.config import ConfigManager
+manager = ConfigManager()
+manager.load_config(config_dict=config.__dict__)
+```
+
+可用模板：
+- `default`: 默认配置
+- `production`: 生产环境配置
+- `development`: 开发环境配置
+- `minimal`: 最小配置
+
+## 配置优先级
+
+配置加载的优先级从高到低：
+
+1. **直接传参** (`load_config(llm_api_key="...")`)
+2. **环境变量** (`CODEREPO_LLM_API_KEY`)
+3. **字典配置** (`config_dict`)
+4. **配置文件** (`coderepoindex.json`, `config.json`)
+5. **默认值**
+
+## 使用示例
+
+### 基本使用
+
+```python
+from coderepoindex.config import load_config
+from coderepoindex.core import CodeIndexer, CodeSearcher
+
+# 加载配置
+config = load_config()
+
+# 创建索引器和搜索器
+indexer = CodeIndexer()  # 自动使用当前配置
+searcher = CodeSearcher()  # 自动使用当前配置
+```
+
+### 不同服务使用不同 API
+
+```python
+from coderepoindex.config import load_config
+
+# 配置不同的 API 服务
+config = load_config(
+    llm_api_key="openai-key",
+    llm_base_url="https://api.openai.com/v1",
+    llm_model_name="gpt-4",
+    
+    embedding_api_key="cohere-key", 
+    embedding_base_url="https://api.cohere.ai/v1",
+    embedding_model_name="embed-english-v3.0"
+)
+```
+
+### 动态配置更新
+
+```python
+from coderepoindex.config import ConfigManager
+
+manager = ConfigManager()
+
+# 运行时更新配置
+manager.update_config(
+    llm_model_name="qwen-turbo",
+    embedding_batch_size=64,
+    storage_cache_size=2000
+)
+```
+
+## 兼容性
+
+为了保持向后兼容性，系统仍然支持旧的统一配置方式：
+
+```python
+# 旧方式仍然有效
+config = load_config(
+    api_key="unified-key",
+    base_url="https://api.example.com"
+)
+
+# 会自动应用到 LLM 和 Embedding 配置
+print(config.llm.api_key)        # "unified-key"
+print(config.embedding.api_key)  # "unified-key"
+```
+
+## 最佳实践
+
+1. **生产环境**: 使用环境变量配置，避免在代码中硬编码密钥
+2. **开发环境**: 使用配置文件，便于版本控制和团队协作
+3. **测试环境**: 使用配置模板，快速切换不同配置
+4. **安全考虑**: 
+   - 不要将 API 密钥提交到版本控制
+   - 使用 `.env` 文件管理环境变量
+   - 在 `.gitignore` 中排除配置文件
+5. **性能优化**:
+   - 根据使用场景选择合适的向量存储后端
+   - 调整批处理大小以优化内存使用
+   - 启用缓存以提高搜索性能
 
 ## 配置模板
 

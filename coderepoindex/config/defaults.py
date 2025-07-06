@@ -1,11 +1,26 @@
+from __future__ import annotations
+from typing import TYPE_CHECKING
+if TYPE_CHECKING:
+    from .config_manager import CodeRepoConfig
+
 """
 默认配置定义
 
 定义CodeRepoIndex项目的默认配置值。
 """
 
-from .config_manager import CodeRepoConfig, ModelConfig, StorageConfig, EmbeddingConfig
+from .config_manager import CodeRepoConfig, ModelConfig, StorageConfig, EmbeddingConfig, LLMConfig
 
+
+# 默认LLM配置
+DEFAULT_LLM_CONFIG = LLMConfig(
+    provider_type="api",
+    model_name="qwen-plus",
+    api_key=None,
+    base_url=None,
+    timeout=30.0,
+    extra_params={}
+)
 
 # 默认嵌入配置
 DEFAULT_EMBEDDING_CONFIG = EmbeddingConfig(
@@ -19,7 +34,7 @@ DEFAULT_EMBEDDING_CONFIG = EmbeddingConfig(
     extra_params={}
 )
 
-# 默认模型配置
+# 默认模型配置（兼容性保留）
 DEFAULT_MODEL_CONFIG = ModelConfig(
     llm_provider_type="api",
     llm_model_name="qwen-plus",
@@ -48,9 +63,10 @@ DEFAULT_CONFIG = CodeRepoConfig(
     project_name="CodeRepoIndex",
     version="1.0.0",
     log_level="INFO",
-    model=DEFAULT_MODEL_CONFIG,
-    storage=DEFAULT_STORAGE_CONFIG,
+    llm=DEFAULT_LLM_CONFIG,
     embedding=DEFAULT_EMBEDDING_CONFIG,
+    storage=DEFAULT_STORAGE_CONFIG,
+    model=DEFAULT_MODEL_CONFIG,
     extra_config={}
 )
 
@@ -62,12 +78,16 @@ CONFIG_TEMPLATES = {
         project_name="CodeRepoIndex",
         version="1.0.0",
         log_level="WARNING",
-        model=ModelConfig(
-            llm_provider_type="api",
-            llm_model_name="qwen-plus",
-            embedding_provider_type="api",
-            embedding_model_name="text-embedding-v3",
+        llm=LLMConfig(
+            provider_type="api",
+            model_name="qwen-plus",
             timeout=60.0
+        ),
+        embedding=EmbeddingConfig(
+            provider_type="api",
+            model_name="text-embedding-v3",
+            timeout=60.0,
+            batch_size=64
         ),
         storage=StorageConfig(
             storage_backend="local",
@@ -78,23 +98,28 @@ CONFIG_TEMPLATES = {
             auto_backup=True,
             backup_interval=1800
         ),
-        embedding=EmbeddingConfig(
-            provider_type="api",
-            model_name="text-embedding-v3",
-            timeout=60.0,
-            batch_size=64
+        model=ModelConfig(
+            llm_provider_type="api",
+            llm_model_name="qwen-plus",
+            embedding_provider_type="api",
+            embedding_model_name="text-embedding-v3",
+            timeout=60.0
         )
     ),
     "development": CodeRepoConfig(
         project_name="CodeRepoIndex",
         version="1.0.0",
         log_level="DEBUG",
-        model=ModelConfig(
-            llm_provider_type="api",
-            llm_model_name="qwen-plus",
-            embedding_provider_type="api",
-            embedding_model_name="text-embedding-v3",
+        llm=LLMConfig(
+            provider_type="api",
+            model_name="qwen-plus",
             timeout=30.0
+        ),
+        embedding=EmbeddingConfig(
+            provider_type="api",
+            model_name="text-embedding-v3",
+            timeout=30.0,
+            batch_size=16
         ),
         storage=StorageConfig(
             storage_backend="local",
@@ -105,23 +130,28 @@ CONFIG_TEMPLATES = {
             auto_backup=False,
             backup_interval=3600
         ),
-        embedding=EmbeddingConfig(
-            provider_type="api",
-            model_name="text-embedding-v3",
-            timeout=30.0,
-            batch_size=16
-        )
-    ),
-    "minimal": CodeRepoConfig(
-        project_name="CodeRepoIndex",
-        version="1.0.0",
-        log_level="ERROR",
         model=ModelConfig(
             llm_provider_type="api",
             llm_model_name="qwen-plus",
             embedding_provider_type="api",
             embedding_model_name="text-embedding-v3",
             timeout=30.0
+        )
+    ),
+    "minimal": CodeRepoConfig(
+        project_name="CodeRepoIndex",
+        version="1.0.0",
+        log_level="ERROR",
+        llm=LLMConfig(
+            provider_type="api",
+            model_name="qwen-plus",
+            timeout=30.0
+        ),
+        embedding=EmbeddingConfig(
+            provider_type="api",
+            model_name="text-embedding-v3",
+            timeout=30.0,
+            batch_size=8
         ),
         storage=StorageConfig(
             storage_backend="local",
@@ -132,11 +162,12 @@ CONFIG_TEMPLATES = {
             auto_backup=False,
             backup_interval=7200
         ),
-        embedding=EmbeddingConfig(
-            provider_type="api",
-            model_name="text-embedding-v3",
-            timeout=30.0,
-            batch_size=8
+        model=ModelConfig(
+            llm_provider_type="api",
+            llm_model_name="qwen-plus",
+            embedding_provider_type="api",
+            embedding_model_name="text-embedding-v3",
+            timeout=30.0
         )
     )
 }

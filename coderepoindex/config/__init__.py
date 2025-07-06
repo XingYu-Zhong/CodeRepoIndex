@@ -1,43 +1,57 @@
 """
-配置中心模块
+配置管理模块
 
-提供统一的配置管理，包括API密钥、基础URL、模型配置等。
+提供统一的配置管理功能，支持多种配置方式。
 """
 
 from .config_manager import (
     ConfigManager,
     CodeRepoConfig,
+    LLMConfig,
+    EmbeddingConfig,
     ModelConfig,
     StorageConfig,
-    EmbeddingConfig,
-    get_config_manager,
     load_config,
-    save_config
+    save_config,
+    get_current_config,
+    update_config,
+    get_config_manager
 )
 
 from .defaults import (
     DEFAULT_CONFIG,
+    DEFAULT_LLM_CONFIG,
     DEFAULT_EMBEDDING_CONFIG,
+    DEFAULT_MODEL_CONFIG,
     DEFAULT_STORAGE_CONFIG,
-    DEFAULT_MODEL_CONFIG
+    CONFIG_TEMPLATES,
+    get_config_template
 )
 
 __all__ = [
-    # 核心配置管理
-    "ConfigManager",
-    "CodeRepoConfig",
-    "ModelConfig",
-    "StorageConfig", 
-    "EmbeddingConfig",
+    # 配置管理器
+    'ConfigManager',
+    'get_config_manager',
     
-    # 便利函数
-    "get_config_manager",
-    "load_config",
-    "save_config",
+    # 配置类
+    'CodeRepoConfig',
+    'LLMConfig',
+    'EmbeddingConfig', 
+    'ModelConfig',
+    'StorageConfig',
+    
+    # 配置函数
+    'load_config',
+    'save_config',
+    'get_current_config',
+    'update_config',
     
     # 默认配置
-    "DEFAULT_CONFIG",
-    "DEFAULT_EMBEDDING_CONFIG",
-    "DEFAULT_STORAGE_CONFIG",
-    "DEFAULT_MODEL_CONFIG"
+    'DEFAULT_CONFIG',
+    'DEFAULT_LLM_CONFIG',
+    'DEFAULT_EMBEDDING_CONFIG',
+    'DEFAULT_MODEL_CONFIG',
+    'DEFAULT_STORAGE_CONFIG',
+    'CONFIG_TEMPLATES',
+    'get_config_template'
 ] 

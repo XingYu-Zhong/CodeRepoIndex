@@ -399,6 +399,20 @@ class SimpleVectorStore(BaseVectorStore):
             'metadata_keys': list(metadata_keys)
         }
     
+    def get_stats(self) -> Dict[str, Any]:
+        """
+        获取向量存储统计信息（get_statistics的别名）
+        
+        Returns:
+            统计信息字典
+        """
+        stats = self.get_statistics()
+        return {
+            'total_vectors': stats['total_vectors'],
+            'storage_type': 'SimpleVectorStore',
+            'dimension': stats['dimension']
+        }
+    
     def similarity_search_with_threshold(
         self, 
         query_embedding: List[float], 

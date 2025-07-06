@@ -1,16 +1,14 @@
-"""
-配置管理器
-
-统一管理CodeRepoIndex项目的所有配置。
-"""
-
+from __future__ import annotations
 import os
 import json
 import logging
-from typing import Dict, Any, Optional, Union
+from typing import Dict, Any, Optional, Union, TYPE_CHECKING
 from dataclasses import dataclass, field, asdict
 from pathlib import Path
 from threading import Lock
+
+if TYPE_CHECKING:
+    from .defaults import CodeRepoConfig
 
 logger = logging.getLogger(__name__)
 
@@ -29,8 +27,19 @@ class EmbeddingConfig:
 
 
 @dataclass
+class LLMConfig:
+    """LLM模型配置"""
+    provider_type: str = "api"
+    model_name: str = "qwen-plus"
+    api_key: Optional[str] = None
+    base_url: Optional[str] = None
+    timeout: Optional[float] = 30.0
+    extra_params: Dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass
 class ModelConfig:
-    """模型配置"""
+    """模型配置（兼容性保留）"""
     llm_provider_type: str = "api"
     llm_model_name: str = "qwen-plus"
     embedding_provider_type: str = "api"
@@ -62,26 +71,42 @@ class CodeRepoConfig:
     version: str = "1.0.0"
     log_level: str = "INFO"
     
-    # 模型配置
-    model: ModelConfig = field(default_factory=ModelConfig)
+    # LLM配置
+    llm: LLMConfig = field(default_factory=LLMConfig)
+    
+    # 嵌入配置
+    embedding: EmbeddingConfig = field(default_factory=EmbeddingConfig)
     
     # 存储配置
     storage: StorageConfig = field(default_factory=StorageConfig)
     
-    # 嵌入配置
-    embedding: EmbeddingConfig = field(default_factory=EmbeddingConfig)
+    # 模型配置（兼容性保留）
+    model: ModelConfig = field(default_factory=ModelConfig)
     
     # 其他配置
     extra_config: Dict[str, Any] = field(default_factory=dict)
     
     def __post_init__(self):
         """配置验证和后处理"""
-        # 确保model和embedding配置同步
-        if self.model.api_key and not self.embedding.api_key:
-            self.embedding.api_key = self.model.api_key
-        if self.model.base_url and not self.embedding.base_url:
-            self.embedding.base_url = self.model.base_url
+        # 兼容性处理：如果model配置有值，同步到llm和embedding配置
+        if self.model.api_key:
+            if not self.llm.api_key:
+                self.llm.api_key = self.model.api_key
+            if not self.embedding.api_key:
+                self.embedding.api_key = self.model.api_key
+                
+        if self.model.base_url:
+            if not self.llm.base_url:
+                self.llm.base_url = self.model.base_url
+            if not self.embedding.base_url:
+                self.embedding.base_url = self.model.base_url
         
+        # 同步模型名称
+        if self.model.llm_model_name != "qwen-plus":
+            self.llm.model_name = self.model.llm_model_name
+        if self.model.embedding_model_name != "text-embedding-v3":
+            self.embedding.model_name = self.model.embedding_model_name
+            
         # 设置日志级别
         if self.log_level:
             logging.getLogger('coderepoindex').setLevel(getattr(logging, self.log_level.upper()))
@@ -113,36 +138,35 @@ class ConfigManager:
         config_path: Optional[str] = None,
         config_dict: Optional[Dict[str, Any]] = None,
         **kwargs
-    ) -> CodeRepoConfig:
+    ) -> "CodeRepoConfig":
         """
-        加载配置
-        
-        Args:
-            config_path: 配置文件路径
-            config_dict: 配置字典
-            **kwargs: 额外配置参数
-            
-        Returns:
-            配置对象
+        加载配置，优先级：kwargs > 环境变量 > config_dict > 配置文件 > 默认值
         """
         config_data = {}
+
+        # 1. 尝试从默认配置文件加载
+        effective_config_path = config_path
+        if effective_config_path is None:
+            if Path('coderepoindex.json').exists():
+                effective_config_path = 'coderepoindex.json'
+            elif Path('config.json').exists():
+                effective_config_path = 'config.json'
         
-        # 1. 从文件加载配置
-        if config_path:
-            config_data.update(self._load_from_file(config_path))
-            self._config_file = config_path
-        
-        # 2. 从字典加载配置
+        if effective_config_path:
+            config_data.update(self._load_from_file(effective_config_path))
+            self._config_file = effective_config_path
+
+        # 2. 从字典更新配置
         if config_dict:
             config_data.update(config_dict)
-        
-        # 3. 从环境变量加载配置
+
+        # 3. 从环境变量更新配置
         config_data.update(self._load_from_env())
-        
-        # 4. 应用额外参数
+
+        # 4. 从关键字参数更新配置 (最高优先级)
         if kwargs:
             config_data.update(kwargs)
-        
+
         # 5. 创建配置对象
         self._config = self._create_config(config_data)
         
@@ -238,101 +262,140 @@ class ConfigManager:
         """从环境变量加载配置"""
         config = {}
         
-        # API 配置
-        if api_key := os.getenv('CODEREPO_API_KEY') or os.getenv('OPENAI_API_KEY'):
-            config['api_key'] = api_key
+        # 基础配置
+        if os.getenv('CODEREPO_PROJECT_NAME'):
+            config['project_name'] = os.getenv('CODEREPO_PROJECT_NAME')
+        if os.getenv('CODEREPO_LOG_LEVEL'):
+            config['log_level'] = os.getenv('CODEREPO_LOG_LEVEL')
         
-        if base_url := os.getenv('CODEREPO_BASE_URL') or os.getenv('OPENAI_BASE_URL'):
-            config['base_url'] = base_url
+        # LLM配置
+        llm_config = {}
+        if os.getenv('CODEREPO_LLM_API_KEY'):
+            llm_config['api_key'] = os.getenv('CODEREPO_LLM_API_KEY')
+        if os.getenv('CODEREPO_LLM_BASE_URL'):
+            llm_config['base_url'] = os.getenv('CODEREPO_LLM_BASE_URL')
+        if os.getenv('CODEREPO_LLM_MODEL'):
+            llm_config['model_name'] = os.getenv('CODEREPO_LLM_MODEL')
+        if os.getenv('CODEREPO_LLM_PROVIDER'):
+            llm_config['provider_type'] = os.getenv('CODEREPO_LLM_PROVIDER')
+        if llm_config:
+            config['llm'] = llm_config
         
-        # 模型配置
-        if llm_model := os.getenv('CODEREPO_LLM_MODEL'):
-            config['llm_model_name'] = llm_model
+        # 嵌入配置
+        embedding_config = {}
+        if os.getenv('CODEREPO_EMBEDDING_API_KEY'):
+            embedding_config['api_key'] = os.getenv('CODEREPO_EMBEDDING_API_KEY')
+        if os.getenv('CODEREPO_EMBEDDING_BASE_URL'):
+            embedding_config['base_url'] = os.getenv('CODEREPO_EMBEDDING_BASE_URL')
+        if os.getenv('CODEREPO_EMBEDDING_MODEL'):
+            embedding_config['model_name'] = os.getenv('CODEREPO_EMBEDDING_MODEL')
+        if os.getenv('CODEREPO_EMBEDDING_PROVIDER'):
+            embedding_config['provider_type'] = os.getenv('CODEREPO_EMBEDDING_PROVIDER')
+        if embedding_config:
+            config['embedding'] = embedding_config
         
-        if embedding_model := os.getenv('CODEREPO_EMBEDDING_MODEL'):
-            config['embedding_model_name'] = embedding_model
+        # 兼容性：通用API配置（如果没有分别配置）
+        if os.getenv('CODEREPO_API_KEY') and not llm_config.get('api_key') and not embedding_config.get('api_key'):
+            api_key = os.getenv('CODEREPO_API_KEY')
+            config.setdefault('llm', {})['api_key'] = api_key
+            config.setdefault('embedding', {})['api_key'] = api_key
+            
+        if os.getenv('CODEREPO_BASE_URL') and not llm_config.get('base_url') and not embedding_config.get('base_url'):
+            base_url = os.getenv('CODEREPO_BASE_URL')
+            config.setdefault('llm', {})['base_url'] = base_url
+            config.setdefault('embedding', {})['base_url'] = base_url
         
         # 存储配置
-        if storage_path := os.getenv('CODEREPO_STORAGE_PATH'):
-            config['storage_base_path'] = storage_path
-        
-        if storage_backend := os.getenv('CODEREPO_STORAGE_BACKEND'):
-            config['storage_backend'] = storage_backend
-        
-        if vector_backend := os.getenv('CODEREPO_VECTOR_BACKEND'):
-            config['vector_backend'] = vector_backend
-        
-        # 日志配置
-        if log_level := os.getenv('CODEREPO_LOG_LEVEL'):
-            config['log_level'] = log_level
+        storage_config = {}
+        if os.getenv('CODEREPO_STORAGE_PATH'):
+            storage_config['base_path'] = os.getenv('CODEREPO_STORAGE_PATH')
+        if os.getenv('CODEREPO_STORAGE_BACKEND'):
+            storage_config['storage_backend'] = os.getenv('CODEREPO_STORAGE_BACKEND')
+        if os.getenv('CODEREPO_VECTOR_BACKEND'):
+            storage_config['vector_backend'] = os.getenv('CODEREPO_VECTOR_BACKEND')
+        if storage_config:
+            config['storage'] = storage_config
         
         return config
     
     def _create_config(self, config_data: Dict[str, Any]) -> CodeRepoConfig:
-        """创建配置对象"""
-        # 处理嵌套配置
-        model_config = ModelConfig()
-        storage_config = StorageConfig()
-        embedding_config = EmbeddingConfig()
+        """从字典创建配置对象"""
+        from .defaults import DEFAULT_CONFIG
         
-        # 更新模型配置
-        if 'model' in config_data:
-            model_data = config_data['model']
-            if isinstance(model_data, dict):
-                for key, value in model_data.items():
-                    if hasattr(model_config, key):
-                        setattr(model_config, key, value)
+        # 创建默认配置的副本
+        config = CodeRepoConfig(
+            project_name=config_data.get('project_name', DEFAULT_CONFIG.project_name),
+            version=config_data.get('version', DEFAULT_CONFIG.version),
+            log_level=config_data.get('log_level', DEFAULT_CONFIG.log_level),
+            extra_config=config_data.get('extra_config', {})
+        )
         
-        # 更新存储配置
-        if 'storage' in config_data:
-            storage_data = config_data['storage']
-            if isinstance(storage_data, dict):
-                for key, value in storage_data.items():
-                    if hasattr(storage_config, key):
-                        setattr(storage_config, key, value)
+        # 处理LLM配置
+        llm_data = config_data.get('llm', {})
+        config.llm = LLMConfig(
+            provider_type=llm_data.get('provider_type', DEFAULT_CONFIG.llm.provider_type),
+            model_name=llm_data.get('model_name', DEFAULT_CONFIG.llm.model_name),
+            api_key=llm_data.get('api_key', DEFAULT_CONFIG.llm.api_key),
+            base_url=llm_data.get('base_url', DEFAULT_CONFIG.llm.base_url),
+            timeout=llm_data.get('timeout', DEFAULT_CONFIG.llm.timeout),
+            extra_params=llm_data.get('extra_params', {})
+        )
         
-        # 更新嵌入配置
-        if 'embedding' in config_data:
-            embedding_data = config_data['embedding']
-            if isinstance(embedding_data, dict):
-                for key, value in embedding_data.items():
-                    if hasattr(embedding_config, key):
-                        setattr(embedding_config, key, value)
+        # 处理嵌入配置
+        embedding_data = config_data.get('embedding', {})
+        config.embedding = EmbeddingConfig(
+            provider_type=embedding_data.get('provider_type', DEFAULT_CONFIG.embedding.provider_type),
+            model_name=embedding_data.get('model_name', DEFAULT_CONFIG.embedding.model_name),
+            api_key=embedding_data.get('api_key', DEFAULT_CONFIG.embedding.api_key),
+            base_url=embedding_data.get('base_url', DEFAULT_CONFIG.embedding.base_url),
+            max_tokens=embedding_data.get('max_tokens', DEFAULT_CONFIG.embedding.max_tokens),
+            timeout=embedding_data.get('timeout', DEFAULT_CONFIG.embedding.timeout),
+            batch_size=embedding_data.get('batch_size', DEFAULT_CONFIG.embedding.batch_size),
+            extra_params=embedding_data.get('extra_params', {})
+        )
         
-        # 处理顶级配置
-        main_config = CodeRepoConfig()
+        # 处理存储配置
+        storage_data = config_data.get('storage', {})
+        config.storage = StorageConfig(
+            storage_backend=storage_data.get('storage_backend', DEFAULT_CONFIG.storage.storage_backend),
+            vector_backend=storage_data.get('vector_backend', DEFAULT_CONFIG.storage.vector_backend),
+            base_path=storage_data.get('base_path', DEFAULT_CONFIG.storage.base_path),
+            cache_enabled=storage_data.get('cache_enabled', DEFAULT_CONFIG.storage.cache_enabled),
+            cache_size=storage_data.get('cache_size', DEFAULT_CONFIG.storage.cache_size),
+            auto_backup=storage_data.get('auto_backup', DEFAULT_CONFIG.storage.auto_backup),
+            backup_interval=storage_data.get('backup_interval', DEFAULT_CONFIG.storage.backup_interval),
+            extra_params=storage_data.get('extra_params', {})
+        )
         
-        # 特殊处理一些配置项
-        config_mappings = {
-            'api_key': ['model.api_key', 'embedding.api_key'],
-            'base_url': ['model.base_url', 'embedding.base_url'],
-            'llm_model_name': ['model.llm_model_name'],
-            'embedding_model_name': ['model.embedding_model_name', 'embedding.model_name'],
-            'storage_base_path': ['storage.base_path'],
-            'storage_backend': ['storage.storage_backend'],
-            'vector_backend': ['storage.vector_backend'],
-        }
+        # 处理兼容性配置（model）
+        model_data = config_data.get('model', {})
+        config.model = ModelConfig(
+            llm_provider_type=model_data.get('llm_provider_type', DEFAULT_CONFIG.model.llm_provider_type),
+            llm_model_name=model_data.get('llm_model_name', DEFAULT_CONFIG.model.llm_model_name),
+            embedding_provider_type=model_data.get('embedding_provider_type', DEFAULT_CONFIG.model.embedding_provider_type),
+            embedding_model_name=model_data.get('embedding_model_name', DEFAULT_CONFIG.model.embedding_model_name),
+            api_key=model_data.get('api_key', DEFAULT_CONFIG.model.api_key),
+            base_url=model_data.get('base_url', DEFAULT_CONFIG.model.base_url),
+            timeout=model_data.get('timeout', DEFAULT_CONFIG.model.timeout),
+            extra_params=model_data.get('extra_params', {})
+        )
         
-        for key, value in config_data.items():
-            if key in config_mappings:
-                # 映射到具体的配置项
-                for target_path in config_mappings[key]:
-                    parts = target_path.split('.')
-                    if parts[0] == 'model':
-                        setattr(model_config, parts[1], value)
-                    elif parts[0] == 'storage':
-                        setattr(storage_config, parts[1], value)
-                    elif parts[0] == 'embedding':
-                        setattr(embedding_config, parts[1], value)
-            elif hasattr(main_config, key):
-                setattr(main_config, key, value)
+        # 处理扁平化配置（兼容性）
+        if 'api_key' in config_data:
+            if not config.llm.api_key:
+                config.llm.api_key = config_data['api_key']
+            if not config.embedding.api_key:
+                config.embedding.api_key = config_data['api_key']
+            config.model.api_key = config_data['api_key']
+            
+        if 'base_url' in config_data:
+            if not config.llm.base_url:
+                config.llm.base_url = config_data['base_url']
+            if not config.embedding.base_url:
+                config.embedding.base_url = config_data['base_url']
+            config.model.base_url = config_data['base_url']
         
-        # 设置嵌套配置
-        main_config.model = model_config
-        main_config.storage = storage_config
-        main_config.embedding = embedding_config
-        
-        return main_config
+        return config
 
 
 # 全局配置管理器实例
