@@ -19,6 +19,7 @@ extensions = [
     'sphinx.ext.viewcode',
     'sphinx.ext.todo',
     'myst_parser',
+    'sphinx_mermaid',
 ]
 
 templates_path = ['_templates']
