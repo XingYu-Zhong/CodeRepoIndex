@@ -20,7 +20,7 @@ setup(
     name="coderepoindex",
     version="0.1.0",
     author="CodeRepoIndex Team",
-    author_email="contact@coderepoindex.com",
+    author_email="zhongxingyuemail@gmail.com",
     description="通过语义理解提高代码仓库的可发现性和可搜索性",
     long_description=read_long_description(),
     long_description_content_type="text/markdown",
