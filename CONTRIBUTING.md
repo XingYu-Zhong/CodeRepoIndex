@@ -115,13 +115,13 @@ docs: 更新 API 文档
 ```
 CodeRepoIndex/
 ├── coderepoindex/          # 主要源代码
-│   ├── core/              # 核心功能模块
-│   ├── parsers/           # 代码解析器
-│   ├── embeddings/        # 向量嵌入模块
-│   ├── storage/           # 存储模块
-│   ├── search/            # 搜索模块
-│   ├── utils/             # 工具函数
-│   └── api/               # API 接口
+│   ├── core/              # 核心功能模块 (Indexer, Searcher)
+│   ├── parsers/           # 代码解析器 (CodeParser, DirectoryParser)
+│   ├── embeddings/        # 向量嵌入与存储模块
+│   ├── repository/        # 仓库获取模块
+│   ├── models/            # 外部模型接口
+│   ├── config/            # 配置管理
+│   └── cli.py             # 命令行接口
 ├── tests/                 # 测试文件
 │   ├── unit/              # 单元测试
 │   └── integration/       # 集成测试

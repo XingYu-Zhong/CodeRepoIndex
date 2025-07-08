@@ -210,260 +210,127 @@ config = load_config(
 
 ### 3. 使用示例
 
-#### 示例 1: 完整的项目管理工作流
+#### 示例 1: 本地项目快速索引与搜索 (推荐)
 
-这个例子展示了最完整的使用场景，包括项目管理、索引、搜索等所有功能。
-
-```python
-import asyncio
-from coderepoindex.config import load_config
-from coderepoindex.core import CodeIndexer, CodeSearcher, create_project_manager
-from coderepoindex.repository import create_git_config
-
-async def main():
-    # 1. 加载配置
-    config = load_config(
-        config_dict={
-            "embedding": {
-                "api_key": "your-api-key-here",
-                "base_url": "https://dashscope.aliyuncs.com/compatible-mode/v1",
-                "model_name": "text-embedding-v3",
-                "provider_type": "api"
-            },
-            "storage": {
-                "storage_backend": "local",
-                "vector_backend": "memory",  # 或使用 "chroma" 进行持久化
-                "base_path": ".storage"
-            }
-        }
-    )
-
-    print(f"🔧 配置加载完成")
-    print(f"Embedding模型: {config.embedding.model_name}")
-    print(f"存储路径: {config.storage.base_path}")
-
-    # 2. 创建项目管理器
-    print("\n🚀 初始化项目管理器...")
-    project_manager = create_project_manager(config=config)
-    
-    with project_manager:
-        # 3. 定义仓库信息
-        repo_url = "https://github.com/XingYu-Zhong/testpythonproject"
-        repo_config = create_git_config(repo_url=repo_url, branch="master")
-        
-        # 4. 创建或获取项目
-        print(f"\n📁 管理项目: {repo_url}")
-        try:
-            project = project_manager.create_project(
-                name="Test Python Project",
-                description="用于测试的Python项目",
-                repository_url=repo_url,
-                project_id="testpythonproject"  # 使用固定ID方便复用
-            )
-            print(f"✅ 项目创建成功: {project.name}")
-        except ValueError:
-            # 项目已存在，获取现有项目
-            project = project_manager.get_project("testpythonproject")
-            print(f"📋 使用现有项目: {project.name}")
-        
-        # 5. 设置为当前项目
-        project_manager.set_current_project(project.project_id)
-        print(f"🎯 当前项目: {project.name}")
-        
-        # 6. 创建索引器和搜索器
-        indexer = CodeIndexer(config=config)
-        searcher = CodeSearcher(config=config)
-        
-        # 7. 索引仓库（使用项目ID确保数据一致性）
-        print(f"\n🔍 开始索引项目...")
-        index_result = indexer.index_repository(
-            repo_config, 
-            repository_id=project.project_id  # 关键：使用项目ID
-        )
-        
-        print(f"✅ 索引完成!")
-        print(f"  - 代码块数: {index_result['total_blocks']}")
-        print(f"  - 处理文件数: {index_result.get('processed_files', 0)}")
-        print(f"  - 语言分布: {index_result.get('language_distribution', {})}")
-        
-        # 8. 验证项目统计
-        print(f"\n📊 项目统计:")
-        stats = project_manager.get_project_stats(project.project_id)
-        print(f"  - 代码块数: {stats.get('total_blocks', 0)}")
-        print(f"  - 文件数: {stats.get('total_files', 0)}")
-        print(f"  - 语言分布: {stats.get('language_distribution', {})}")
-        
-        # 9. 语义搜索示例
-        print(f"\n🔎 语义搜索演示...")
-        queries = [
-            "How to send a POST request with JSON data?",
-            "如何处理文件上传",
-            "数据库连接池配置"
-        ]
-        
-        for query in queries:
-            print(f"\n🔍 查询: {query}")
-            
-            # 项目级搜索（自动限制在当前项目内）
-            pm_results = project_manager.search_in_project(
-                query=query, 
-                top_k=2
-            )
-            
-            if pm_results:
-                print(f"  找到 {len(pm_results)} 个相关结果:")
-                for i, result in enumerate(pm_results, 1):
-                    print(f"    {i}. {result.block.file_path}:{result.block.line_start}")
-                    print(f"       函数: {result.block.name}")
-                    print(f"       相似度: {result.score:.4f}")
-            else:
-                print("  暂无搜索结果")
-        
-        # 10. 多项目管理演示
-        all_projects = project_manager.list_projects()
-        print(f"\n🌟 项目管理功能:")
-        print(f"📋 系统中共有 {len(all_projects)} 个项目:")
-        for i, proj in enumerate(all_projects, 1):
-            current_marker = " (当前)" if proj.project_id == project.project_id else ""
-            print(f"  {i}. {proj.name} ({proj.project_id[:12]}...){current_marker}")
-            if proj.description:
-                print(f"     描述: {proj.description}")
-
-if __name__ == "__main__":
-    asyncio.run(main())
-```
-
-#### 示例 2: 本地项目快速索引
-
-针对本地开发的简化版本：
+这是最简单、最核心的用法，展示了如何索引一个本地代码目录并进行搜索。
 
 ```python
 from coderepoindex.config import load_config
-from coderepoindex.core import CodeIndexer, CodeSearcher, create_project_manager
+from coderepoindex.core import CodeIndexer, CodeSearcher
 from coderepoindex.repository import create_local_config
 
-# 快速配置（用于本地测试）
-config = load_config(
-    config_dict={
+def main():
+    # 1. 加载配置 (或使用环境变量/配置文件)
+    # 注意：请替换为您的真实API密钥和URL
+    config = load_config(config_dict={
         "embedding": {
-            "api_key": "your-api-key",
-            "base_url": "https://api.provider.com/v1",
-            "model_name": "text-embedding-model",
-            "provider_type": "api"
+            "api_key": "your-embedding-api-key",
+            "base_url": "https://dashscope.aliyuncs.com/compatible-mode/v1",
+            "model_name": "text-embedding-v3"
         },
         "storage": {
-            "storage_backend": "local",
-            "vector_backend": "chroma",  # 使用ChromaDB持久化
-            "base_path": "./my_project_index"
+            "base_path": "./my_code_index"
         }
-    }
-)
+    })
+    print(f"🔧 配置加载完成，使用模型: {config.embedding.model_name}")
 
-# 初始化
-project_manager = create_project_manager(config=config)
-indexer = CodeIndexer(config=config)
-searcher = CodeSearcher(config=config)
+    # 2. 初始化核心组件
+    indexer = CodeIndexer(config=config)
+    searcher = CodeSearcher(config=config)
+    
+    # 3. 定义要索引的本地仓库
+    # 请将 './coderepoindex' 替换为您自己的项目路径
+    local_repo_path = "./coderepoindex"
+    repo_config = create_local_config(path=local_repo_path)
+    
+    # 4. 执行索引
+    print(f"\n🔍 开始索引本地目录: {local_repo_path}")
+    # 使用 with 上下文管理器确保资源被正确处理
+    with indexer:
+        index_stats = indexer.index_repository(repo_config, repository_id="my_local_project")
+    
+    print("✅ 索引完成!")
+    print(f"  - 总文件数: {index_stats.get('total_files', 0)}")
+    print(f"  - 代码块数: {index_stats.get('total_blocks', 0)}")
 
-with project_manager:
-    # 创建本地项目
-    repo_config = create_local_config(path="./my_local_project")
+    # 5. 执行搜索
+    print("\n🔎 开始搜索...")
+    queries = [
+        "如何处理文件上传",
+        "数据库连接池配置",
+        "def get_user_by_id"
+    ]
     
-    project = project_manager.create_project(
-        name="My Local Project",
-        description="本地开发项目",
-        local_path="./my_local_project",
-        project_id="my_local_project"
+    with searcher:
+        for query in queries:
+            print(f"\n▶️  查询: '{query}'")
+            results = searcher.search(
+                query=query,
+                top_k=3,
+                repository_id="my_local_project" # 指定在哪个项目中搜索
+            )
+            
+            if results:
+                print(f"  找到 {len(results)} 个相关结果:")
+                for i, result in enumerate(results, 1):
+                    print(f"    {i}. {result.block.file_path}:{result.block.line_start}")
+                    print(f"       函数/类: {result.block.name}")
+                    print(f"       相似度: {result.score:.4f}")
+            else:
+                print("  未找到相关结果。")
+
+if __name__ == "__main__":
+    main()
+```
+
+#### 示例 2: 索引 Git 仓库并使用多项目管理
+
+这个例子展示了更高级的用法，包括从Git仓库拉取代码和管理多个项目。
+
+```python
+from coderepoindex.core import create_project_manager
+from coderepoindex.repository import create_git_config
+
+# 假设 config 对象已像上一个示例一样加载
+# config = load_config(...) 
+
+# 1. 创建项目管理器
+pm = create_project_manager(config=config)
+
+with pm:
+    # 2. 定义并索引第一个项目
+    repo1_url = "https://github.com/requests/requests.git"
+    repo1_config = create_git_config(repo1_url, branch="main")
+    pm.create_project(name="Python Requests", repository_url=repo1_url, project_id="requests")
+    
+    indexer = CodeIndexer(config=config)
+    with indexer:
+        indexer.index_repository(repo1_config, repository_id="requests")
+    print("✅ 'requests' 项目索引完成。")
+
+    # 3. 定义并索引第二个项目
+    repo2_url = "https://github.com/expressjs/express.git"
+    repo2_config = create_git_config(repo2_url, branch="master")
+    pm.create_project(name="Node Express", repository_url=repo2_url, project_id="express")
+    
+    with indexer:
+        indexer.index_repository(repo2_config, repository_id="express")
+    print("✅ 'express' 项目索引完成。")
+
+    # 4. 在特定项目中搜索
+    print("\n🔍 在 'requests' 项目中搜索 'session management':")
+    results = pm.search_in_project(
+        query="session management",
+        project_id="requests",
+        top_k=2
     )
-    
-    # 索引本地代码
-    index_result = indexer.index_repository(
-        repo_config,
-        repository_id=project.project_id
-    )
-    
-    print(f"索引完成: {index_result['total_blocks']} 个代码块")
-    
-    # 搜索示例
-    results = project_manager.search_in_project(
-        query="错误处理",
-        top_k=5
-    )
-    
     for result in results:
-        print(f"找到: {result.file_path} - {result.name}")
-```
+        print(f"  - 找到: {result.block.file_path} - {result.block.name}")
 
-#### 示例 3: 多项目对比搜索
-
-展示如何在多个项目间进行搜索对比：
-
-```python
-from coderepoindex.core import create_project_manager, CodeSearcher
-
-project_manager = create_project_manager()
-searcher = CodeSearcher()
-
-with project_manager:
-    # 列出所有项目
-    projects = project_manager.list_projects()
-    print(f"发现 {len(projects)} 个项目")
-    
-    # 在多个项目中搜索相同的查询
-    query = "数据库连接"
-    
-    for project in projects:
-        print(f"\n🔍 搜索项目: {project.name}")
-        
-        # 项目内语义搜索
-        results = project_manager.search_in_project(
-            query=query,
-            project_id=project.project_id,
-            top_k=3
-        )
-        
-        if results:
-            for result in results:
-                print(f"  - {result.file_path}: {result.name} (分数: {result.score})")
-        else:
-            print(f"  - 无相关结果")
-        
-        # 向量搜索对比
-        vector_results = searcher.search(
-            query=query,
-            repository_id=project.project_id,
-            top_k=2
-        )
-        
-        print(f"  向量搜索结果: {len(vector_results)} 个")
-```
-
-#### 示例 4: 多样化语义搜索
-
-展示向量语义搜索对不同类型查询的处理能力：
-
-```python
-# 不同类型的搜索查询示例
-search_examples = [
-    "How to send a POST request with JSON data?",  # 英文自然语言
-    "如何处理文件上传",  # 中文自然语言
-    "database connection pooling",  # 技术术语
-    "异常处理和错误恢复",  # 概念查询
-    "def upload_file",  # 代码模式
-]
-
-for query in search_examples:
-    print(f"\n🔍 查询: {query}")
-    
-    # 纯向量语义搜索会自动：
-    # 1. 将查询转换为向量
-    # 2. 计算语义相似度
-    # 3. 按相似度排序
-    results = project_manager.search_in_project(query=query, top_k=3)
-    
-    for i, result in enumerate(results, 1):
-        print(f"  {i}. {result.file_path}:{result.block.line_start}")
-        print(f"     匹配原因: {result.match_reason}")
-        print(f"     分数: {result.score}")
+    # 5. 列出所有项目
+    print("\n📋 当前管理的所有项目:")
+    for proj in pm.list_projects():
+        print(f"  - {proj.name} (ID: {proj.project_id})")
 ```
 
 #### 配置最佳实践
