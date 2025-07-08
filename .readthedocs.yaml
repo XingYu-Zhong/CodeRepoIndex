@@ -11,9 +11,6 @@ build:
     python: "3.11"
   apt_packages:
     - fonts-wqy-microhei
-  jobs:
-    pre_build:
-      - pip install sphinx-mermaid
 
 # Build documentation in the docs/ directory with Sphinx
 sphinx:
