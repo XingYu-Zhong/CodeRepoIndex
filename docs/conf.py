@@ -41,6 +41,7 @@ source_suffix = {
 # -- Options for LaTeX output ------------------------------------------------
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#options-for-latex-output
 
+latex_engine = 'xelatex'
 latex_elements = {
     'papersize': 'a4paper',
     'pointsize': '10pt',
@@ -54,7 +55,6 @@ latex_elements = {
 \geometry{left=2cm, right=2cm, top=2.5cm, bottom=2.5cm}
 ''',
     'figure_align': 'htbp',
-    'latex_engine': 'xelatex',
     'babel': '',
 }
 
