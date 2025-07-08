@@ -41,9 +41,6 @@ source_suffix = {
 # -- Options for LaTeX output ------------------------------------------------
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#options-for-latex-output
 
-"""# -- Options for LaTeX output ------------------------------------------------
-# https://www.sphinx-doc.org/en/master/usage/configuration.html#options-for-latex-output
-
 latex_elements = {
     'papersize': 'a4paper',
     'pointsize': '10pt',
@@ -59,7 +56,7 @@ latex_elements = {
     'figure_align': 'htbp',
     'latex_engine': 'xelatex',
     'babel': '',
-}""
+}
 
 # Grouping the document tree into LaTeX files. List of tuples
 # (source start file, target name, title, author, documentclass [howto/manual]).
