@@ -4,10 +4,10 @@
    contain the root `toctree` directive.
 
 Welcome to coderepoindex's documentation!
-========================================
+==========================================
 
 .. include:: ../README.md
-   :parser: myst_parser
+   :parser: myst
 
 .. toctree::
    :maxdepth: 2

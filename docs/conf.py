@@ -18,6 +18,7 @@ extensions = [
     'sphinx.ext.autodoc',
     'sphinx.ext.viewcode',
     'sphinx.ext.todo',
+    'sphinx.ext.napoleon',
     'myst_parser',
     'sphinxcontrib.mermaid',
 ]
@@ -25,19 +26,35 @@ extensions = [
 templates_path = ['_templates']
 exclude_patterns = ['_build', 'Thumbs.db', '.DS_Store']
 
+# -- MyST parser configuration -----------------------------------------------
+# https://myst-parser.readthedocs.io/en/latest/configuration.html
 
+myst_enable_extensions = [
+    "deflist",
+    "tasklist",
+    "colon_fence",
+    "substitution",
+]
+
+myst_heading_anchors = 3
+
+source_suffix = ['.rst', '.md']
+
+# -- Autodoc configuration ---------------------------------------------------
+autodoc_typehints = 'description'
+autodoc_default_options = {
+    'members': True,
+    'member-order': 'bysource',
+    'special-members': '__init__',
+    'undoc-members': True,
+    'exclude-members': '__weakref__'
+}
 
 # -- Options for HTML output -------------------------------------------------
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#options-for-html-output
 
 html_theme = 'sphinx_rtd_theme'
 html_static_path = ['_static']
-
-source_suffix = {
-    '.rst': 'restructuredtext',
-    '.txt': 'markdown',
-    '.md': 'markdown',
-}
 
 # -- Options for LaTeX output ------------------------------------------------
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#options-for-latex-output

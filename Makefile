@@ -39,12 +39,25 @@ clean: ## 清理临时文件
 	rm -rf htmlcov/
 	rm -rf .pytest_cache/
 	rm -rf .mypy_cache/
+	rm -rf docs/_build/
 
 docs: ## 构建文档
-	cd docs && make html
+	pip install -e ".[docs]"
+	cd docs && sphinx-build -b html . _build/html
+
+docs-clean: ## 清理文档构建
+	rm -rf docs/_build/
+
+docs-test: ## 测试文档构建（带警告检查）
+	pip install -e ".[docs]"
+	cd docs && sphinx-build -b html . _build/html -W --keep-going
 
 docs-serve: ## 启动文档服务器
 	cd docs/_build/html && python -m http.server 8000
+
+docs-live: ## 实时文档预览（需要安装 sphinx-autobuild）
+	pip install sphinx-autobuild
+	cd docs && sphinx-autobuild . _build/html --host 0.0.0.0 --port 8000
 
 build: clean ## 构建分发包
 	python -m build
