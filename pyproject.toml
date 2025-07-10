@@ -11,12 +11,12 @@ authors = [
 description = "通过语义理解提高代码仓库的可发现性和可搜索性"
 readme = "README.md"
 requires-python = ">=3.8"
+
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Intended Audience :: Developers",
     "Topic :: Software Development :: Libraries :: Python Modules",
     "Topic :: Software Development :: Version Control :: Git",
-    "License :: OSI Approved :: MIT License",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.8",
     "Programming Language :: Python :: 3.9",

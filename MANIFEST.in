@@ -1,0 +1,7 @@
+include README.md
+include pyproject.toml
+recursive-include coderepoindex *.py
+recursive-include docs *.py
+recursive-include examples *.py
+global-exclude *.pyc
+global-exclude __pycache__ 
